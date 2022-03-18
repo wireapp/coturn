@@ -422,14 +422,6 @@ The flag that sets the origin consistency
 check: across the session, all requests must have the same
 main ORIGIN attribute value (if the ORIGIN was
 initially used by the session).
-.RS
-.TP
-.B
-\fB\-\-prometheus\fP
-Enable prometheus metrics. By default it is
-disabled. Would listen on port 9641 unther the path /metrics
-also the path / on this port can be used as a health check
-.RE
 .TP
 .B
 \fB\-h\fP
@@ -579,6 +571,15 @@ still be a separate thread). If not set, then a default optimal algorithm
 will be employed (OS\-dependent). In the older Linux systems
 (before Linux kernel 3.9), the number of UDP threads is always one threads
 per network listening endpoint \- unless "\fB\-m\fP 0" or "\fB\-m\fP 1" is set.
+.TP
+.B
+\fB\-\-prometheus\fP
+Enable prometheus metrics. By default it is disabled. If no argument
+is given, then it will listen on port 9641 on the wildcard address under
+the path /metrics. An IP address may be specified to only bind to that
+address, and in this case a port number may also be specified in order to
+override the default port. The path / on this port can also be used as a
+health check.
 .TP
 .B
 \fB\-\-min\-port\fP

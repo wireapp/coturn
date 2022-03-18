@@ -59,8 +59,25 @@ int start_prometheus_server(void){
 
   promhttp_set_active_collector_registry(NULL);
 
+  struct MHD_Daemon *daemon;
+  int flags;
+  void *arg;
 
-  struct MHD_Daemon *daemon = promhttp_start_daemon(MHD_USE_SELECT_INTERNALLY, DEFAULT_PROM_SERVER_PORT, NULL, NULL);
+  flags = MHD_USE_SELECT_INTERNALLY;
+
+  if (turn_params.prometheus == 1) {
+    daemon = promhttp_start_daemon(flags, DEFAULT_PROM_SERVER_PORT, NULL, NULL);
+  } else {
+    if (turn_params.prometheus_address.ss.sa_family == AF_INET6) {
+      flags |= MHD_USE_IPv6;
+      arg = &turn_params.prometheus_address.s6;
+    } else {
+      arg = &turn_params.prometheus_address.s4;
+    }
+
+    daemon = promhttp_start_daemon_with_options(flags, 0, NULL, NULL, MHD_OPTION_SOCK_ADDR, arg, MHD_OPTION_END);
+  }
+
   if (daemon == NULL) {
     return -1;
   }

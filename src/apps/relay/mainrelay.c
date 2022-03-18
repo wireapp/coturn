@@ -173,6 +173,7 @@ TURN_CREDENTIALS_NONE, /* ct */
 0, /* user_quota */
 #if !defined(TURN_NO_PROMETHEUS)
 0, /* prometheus disabled by default */
+{ }, /* prometheus listen address */
 #endif
 ///////////// Users DB //////////////
 { (TURN_USERDB_TYPE)0, {"\0"}, {0,NULL, {NULL,0}} },
@@ -557,8 +558,11 @@ static char Usage[] = "Usage: turnserver [options]\n"
 "						The connection string has the same parameters as redis-userdb connection string.\n"
 #endif
 #if !defined(TURN_NO_PROMETHEUS)
-" --prometheus					Enable prometheus metrics. It is disabled by default. If it is enabled it will listen on port 9641 unther the path /metrics\n"
-"						also the path / on this port can be used as a health check\n"
+" --prometheus		<ip[:port]>		Enable prometheus metrics. It is disabled by default. If no IP address is given, then\n"
+"						it will listen on port 9641 on the wildcard address under the path /metrics. An IP address\n"
+"						may be specified in order to bind to a specific address, and in this case a port number may\n"
+"						also be specified in order to override the default port. The path / on this port can be\n"
+"						used as a health check\n."
 #endif
 " --use-auth-secret				TURN REST API flag.\n"
 "						Flag that sets a special authorization option that is based upon authentication secret\n"
@@ -1532,7 +1536,15 @@ static void set_option(int c, char *value)
 #endif
 #if !defined(TURN_NO_PROMETHEUS)
 	case PROMETHEUS_OPT:
-		turn_params.prometheus = 1;
+		if(!value || !value[0]) {
+			turn_params.prometheus = 1;
+		} else {
+			if(make_ioa_addr_from_full_string((const uint8_t *)value, DEFAULT_PROM_SERVER_PORT, &turn_params.prometheus_address)<0) {
+				TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,"Could not parse Prometheus listener address: %s\n",value);
+			} else {
+				turn_params.prometheus = 2;
+			}
+		}
 		break;
 #endif
 	case AUTH_SECRET_OPT:
