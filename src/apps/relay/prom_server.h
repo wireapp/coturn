@@ -21,6 +21,8 @@ extern "C" {
 #endif /* __clplusplus */
 
 #define DEFAULT_PROM_SERVER_PORT (9641)
+extern int prometheus_port;
+extern ioa_addr prometheus_addr;
 
 extern prom_counter_t *turn_new_allocation;
 extern prom_counter_t *turn_refreshed_allocation;

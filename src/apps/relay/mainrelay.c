@@ -173,7 +173,6 @@ TURN_CREDENTIALS_NONE, /* ct */
 0, /* user_quota */
 #if !defined(TURN_NO_PROMETHEUS)
 0, /* prometheus disabled by default */
-{ }, /* prometheus listen address */
 #endif
 ///////////// Users DB //////////////
 { (TURN_USERDB_TYPE)0, {"\0"}, {0,NULL, {NULL,0}} },
@@ -558,11 +557,11 @@ static char Usage[] = "Usage: turnserver [options]\n"
 "						The connection string has the same parameters as redis-userdb connection string.\n"
 #endif
 #if !defined(TURN_NO_PROMETHEUS)
-" --prometheus		<ip[:port]>		Enable prometheus metrics. It is disabled by default. If no IP address is given, then\n"
-"						it will listen on port 9641 on the wildcard address under the path /metrics. An IP address\n"
-"						may be specified in order to bind to a specific address, and in this case a port number may\n"
-"						also be specified in order to override the default port. The path / on this port can be\n"
-"						used as a health check\n."
+" --prometheus					Enable prometheus metrics. It is disabled by default.\n"
+"						When enabled, it will listen on port 9641 on the wildcard address under the path /metrics.\n"
+"						The path / on this port can also be used as a health check.\n"
+" --prometheus-ip=<ip>				IP address for the Prometheus listener. Default is the wildcard address.\n"
+" --prometheus-port=<port>			Prometheus listener port. Default is 9641.\n"
 #endif
 " --use-auth-secret				TURN REST API flag.\n"
 "						Flag that sets a special authorization option that is based upon authentication secret\n"
@@ -791,6 +790,8 @@ enum EXTRA_OPTS {
 	CHANNEL_LIFETIME_OPT,
 	PERMISSION_LIFETIME_OPT,
 	PROMETHEUS_OPT,
+	PROMETHEUS_IP_OPT,
+	PROMETHEUS_PORT_OPT,
 	AUTH_SECRET_OPT,
 	NO_AUTH_PINGS_OPT,
 	NO_DYNAMIC_IP_LIST_OPT,
@@ -906,6 +907,8 @@ static const struct myoption long_options[] = {
 #endif
 #if !defined(TURN_NO_PROMETHEUS)
 				{ "prometheus", optional_argument, NULL, PROMETHEUS_OPT },
+				{ "prometheus-ip", required_argument, NULL, PROMETHEUS_IP_OPT },
+				{ "prometheus-port", required_argument, NULL, PROMETHEUS_PORT_OPT },
 #endif
 				{ "use-auth-secret", optional_argument, NULL, AUTH_SECRET_OPT },
 				{ "static-auth-secret", required_argument, NULL, STATIC_AUTH_SECRET_VAL_OPT },
@@ -1536,15 +1539,18 @@ static void set_option(int c, char *value)
 #endif
 #if !defined(TURN_NO_PROMETHEUS)
 	case PROMETHEUS_OPT:
-		if(!value || !value[0]) {
-			turn_params.prometheus = 1;
+		turn_params.prometheus = turn_params.prometheus == 0 ? 1 : turn_params.prometheus;
+		break;
+	case PROMETHEUS_IP_OPT:
+		if(make_ioa_addr((const uint8_t*)value,0,&prometheus_addr)<0) {
+			TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,"Cannot parse Prometheus listener address: %s\n", value);
 		} else {
-			if(make_ioa_addr_from_full_string((const uint8_t *)value, DEFAULT_PROM_SERVER_PORT, &turn_params.prometheus_address)<0) {
-				TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,"Could not parse Prometheus listener address: %s\n",value);
-			} else {
-				turn_params.prometheus = 2;
-			}
+			turn_params.prometheus = 2;
 		}
+		break;
+	case PROMETHEUS_PORT_OPT:
+		prometheus_port = atoi(value);
+		turn_params.prometheus = turn_params.prometheus == 0 ? 1 : turn_params.prometheus;
 		break;
 #endif
 	case AUTH_SECRET_OPT:

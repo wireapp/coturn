@@ -319,7 +319,6 @@ typedef struct _turn_params_ {
   vint user_quota;
   #if !defined(TURN_NO_PROMETHEUS)
   int  prometheus;
-  ioa_addr prometheus_address;
   #endif
 
 

@@ -281,6 +281,10 @@ Flags:
 			check: across the session, all requests must have the same
 			main ORIGIN attribute value (if the ORIGIN was
 			initially used by the session).
+ --prometheus		Enable prometheus metrics. By default it is
+			disabled. Would listen on port 9641 unther the path /metrics
+			also the path / on this port can be used as a health check.
+			See also options --prometheus-ip and --prometheus-port.
 
 -h			Help.
 
@@ -392,13 +396,6 @@ Options with values:
 			will be employed (OS-dependent). In the older Linux systems
 			(before Linux kernel 3.9), the number of UDP threads is always one threads
 			per network listening endpoint - unless "-m 0" or "-m 1" is set.
-
---prometheus		Enable prometheus metrics. By default it is disabled. If no argument
-			is given, then it will listen on port 9641 on the wildcard address under
-			the path /metrics. An IP address may be specified to only bind to that
-			address, and in this case a port number may also be specified in order to
-			override the default port. The path / on this port can also be used as a
-			health check.
 
 --min-port		Lower bound of the UDP port range for relay
 			endpoints allocation.
@@ -586,6 +583,10 @@ Options with values:
 			If address family not requested explicitly by the client, then it falls back to this default.
 			The standard RFC explicitly define that this default must be IPv4, 
 			so use other option values with care!
+
+--prometheus-ip		IP address to bind the Prometheus listener to. Default is the wildcard address.
+
+--prometheus-port	Port to bind the Prometheus listener to. Default is 9641.
 
 --cli-ip		Local system IP address to be used for CLI management interface.
 			The turnserver process can be accessed for management with telnet,
