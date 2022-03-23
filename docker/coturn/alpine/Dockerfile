@@ -117,7 +117,7 @@ WORKDIR /app/
 # Use Coturn sources from Git if `coturn_git_ref` is specified.
 ARG coturn_git_ref=HEAD
 ARG coturn_github_url=https://github.com
-ARG coturn_github_repo=wir/coturn
+ARG coturn_github_repo=wireapp/coturn
 
 RUN if [ "${coturn_git_ref}" != 'HEAD' ]; then true \
  && rm -rf /app/* \
