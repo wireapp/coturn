@@ -20,6 +20,10 @@ extern "C" {
 }
 #endif /* __clplusplus */
 
+#define PROM_DISABLED		0
+#define PROM_ENABLED		1
+#define PROM_ENABLED_WITH_IP	2
+
 #define DEFAULT_PROM_SERVER_PORT (9641)
 extern int prometheus_port;
 extern ioa_addr prometheus_addr;

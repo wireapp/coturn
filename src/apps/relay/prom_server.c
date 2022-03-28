@@ -28,7 +28,7 @@ prom_counter_t *turn_total_traffic_peer_sentb;
 
 
 int start_prometheus_server(void){
-  if (turn_params.prometheus == 0){
+  if (turn_params.prometheus == PROM_DISABLED){
     return 1;
   }
   prom_collector_registry_default_init();
@@ -65,9 +65,11 @@ int start_prometheus_server(void){
   int flags = MHD_USE_SELECT_INTERNALLY;
   void *arg;
 
-  if (turn_params.prometheus == 1) {
+  if (turn_params.prometheus == PROM_ENABLED) {
     daemon = promhttp_start_daemon(flags, prometheus_port, NULL, NULL);
   } else {
+    // turn_params.prometheus == PROM_ENABLED_WITH_IP
+
     addr_set_port(&prometheus_addr, prometheus_port);
 
     if (prometheus_addr.ss.sa_family == AF_INET6) {

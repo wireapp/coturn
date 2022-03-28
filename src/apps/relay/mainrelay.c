@@ -1539,18 +1539,18 @@ static void set_option(int c, char *value)
 #endif
 #if !defined(TURN_NO_PROMETHEUS)
 	case PROMETHEUS_OPT:
-		turn_params.prometheus = turn_params.prometheus == 0 ? 1 : turn_params.prometheus;
+		turn_params.prometheus = turn_params.prometheus == PROM_DISABLED ? PROM_ENABLED : turn_params.prometheus;
 		break;
 	case PROMETHEUS_IP_OPT:
 		if(make_ioa_addr((const uint8_t*)value,0,&prometheus_addr)<0) {
 			TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,"Cannot parse Prometheus listener address: %s\n", value);
 		} else {
-			turn_params.prometheus = 2;
+			turn_params.prometheus = PROM_ENABLED_WITH_IP;
 		}
 		break;
 	case PROMETHEUS_PORT_OPT:
 		prometheus_port = atoi(value);
-		turn_params.prometheus = turn_params.prometheus == 0 ? 1 : turn_params.prometheus;
+		turn_params.prometheus = turn_params.prometheus == PROM_DISABLED ? PROM_ENABLED : turn_params.prometheus;
 		break;
 #endif
 	case AUTH_SECRET_OPT:
