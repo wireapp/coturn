@@ -89,7 +89,7 @@ int start_prometheus_server(void){
 }
 
 void prom_set_finished_traffic(const char* realm, const char* user, unsigned long rsvp, unsigned long rsvb, unsigned long sentp, unsigned long sentb, bool peer){
-  if (turn_params.prometheus == 1){
+  if (turn_params.prometheus > PROM_DISABLED){
 
     const char *label[] = {realm, user};
 
