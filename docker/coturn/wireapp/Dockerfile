@@ -1,3 +1,8 @@
+# This image derives from another coturn image, and adds a script which
+# polls the Prometheus metrics endpoint until there are no more active
+# allocations. This is intended to be used as a pre-stop hook to allow graceful
+# termination of the coturn process without disrupting active allocations.
+
 ARG coturn_image=coturn/coturn
 ARG coturn_tag=latest
 
