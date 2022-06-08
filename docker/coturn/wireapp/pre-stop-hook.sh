@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # FUTUREWORK: this will break with IPv6. this should be fixed so it works with
 # IPv6.
