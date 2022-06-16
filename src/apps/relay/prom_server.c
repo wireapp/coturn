@@ -34,7 +34,7 @@ int start_prometheus_server(void){
   }
   prom_collector_registry_default_init();
 
-  const char *label[] = {"realm", 0};
+  const char *label[] = {"realm", NULL};
   size_t nlabels = 1;
 
   if (turn_params.prometheus_username_labels) {
@@ -101,7 +101,7 @@ int start_prometheus_server(void){
 void prom_set_finished_traffic(const char* realm, const char* user, unsigned long rsvp, unsigned long rsvb, unsigned long sentp, unsigned long sentb, bool peer){
 
   if (turn_params.prometheus > PROM_DISABLED){
-    const char *label[] = {realm, 0};
+    const char *label[] = {realm, NULL};
     if (turn_params.prometheus_username_labels){
       label[1] = user;
     }
