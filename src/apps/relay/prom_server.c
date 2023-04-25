@@ -104,9 +104,9 @@ void start_prometheus_server(void) {
   promhttp_set_active_collector_registry(NULL);
 
   // some flags appeared first in microhttpd v0.9.53
-  unsigned int flags = MHD_USE_DUAL_STACK
+  unsigned int flags = 0;
 #if MHD_VERSION >= 0x00095300
-                       | MHD_USE_ERROR_LOG
+  flags |= MHD_USE_ERROR_LOG;
 #endif
       ;
   if (MHD_is_feature_supported(MHD_FEATURE_EPOLL)) {
