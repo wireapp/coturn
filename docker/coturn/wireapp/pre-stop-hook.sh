@@ -24,7 +24,6 @@ function log(){
 }
 
 function getAllocations(){
-    log "Polling coturn status on $url ..."
     allocs=$(curl -s "$url" | grep -E '^turn_total_allocations' | cut -d' ' -f2)
     if [ -z "$allocs" ]; then
         # nobody used the coturn server yet, which means the metric is absent from the output, in which case default to 0.
@@ -41,6 +40,7 @@ function getAllocations(){
     log "Active remaining turn_allocations: $sum"
 }
 
+log "Polling coturn status on $url ..."
 getAllocations
 
 # Invoke drain mode (https://github.com/wireapp/coturn/pull/12)
