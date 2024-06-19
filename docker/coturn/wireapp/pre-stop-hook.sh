@@ -12,20 +12,29 @@ port="$2"
 
 url="http://$host:$port/metrics"
 
-# Invoke drain mode (https://github.com/wireapp/coturn/pull/12)
-pkill --signal SIGUSR1 turnserver
+coturn_pid=$(pgrep -f turnserver | head -n 1)
 
-echo "Polling coturn status on $url"
+function log(){
+    msg=$1
+    echo "PRESTOP: $msg" > "/proc/$coturn_pid/fd/1"
+}
+
+log "Sending signal to drain coturn"
+
+# Invoke drain mode (https://github.com/wireapp/coturn/pull/12)
+pkill -f --signal SIGUSR1 turnserver
+
+log "Polling coturn status on $url"
 
 while true; do
     allocs=$(curl -s "$url" | grep -E '^turn_total_allocations' | cut -d' ' -f2)
     if [ "$?" != 0 ]; then
-        echo "Could not retrieve metrics from coturn!"
+        log "Could not retrieve metrics from coturn!"
         exit 1
     fi
 
     if [ -z "$allocs" ]; then
-        echo "No more active allocations, exiting"
+        log "No more active allocations, exiting"
         exit 0
     fi
 
@@ -38,10 +47,10 @@ while true; do
         (( sum += num ))
     done
     if [ "$sum" = 0 ]; then
-        echo "No more active allocations, exiting"
+        log "No more active allocations, exiting"
         exit 0
     fi
 
-    echo "Active allocations remaining, sleeping for $SLEEPTIME seconds"
+    log "Active allocations [$sum] remaining, sleeping for $SLEEPTIME seconds"
     sleep "$SLEEPTIME"
 done
