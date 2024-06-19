@@ -13,7 +13,7 @@ port="$2"
 url="http://$host:$port/metrics"
 
 coturn_exe=/usr/bin/turnserver
-coturn_pid=$(pgrep "$coturn_exe" | head -n 1)
+coturn_pid=$(pgrep -f "$coturn_exe" | head -n 1)
 
 function log(){
     msg=$1
@@ -50,7 +50,7 @@ log "Active allocations: [$sum] remaining."
 
 # Invoke drain mode (https://github.com/wireapp/coturn/pull/12)
 log "Sending signal to drain coturn..."
-pkill --signal SIGUSR1 "$coturn_exe"
+pkill -f --signal SIGUSR1 "$coturn_exe"
 
 sleep 1
 allocs2=$(curl -s "$url" | grep -E '^turn_total_allocations' | cut -d' ' -f2)
@@ -61,7 +61,7 @@ else
     log "$allocs2"
 fi
 
-while pgrep "$coturn_exe" > /dev/null; do
+while pgrep -f "$coturn_exe" > /dev/null; do
     log "$coturn_exe is still running. Waiting..."
     sleep $SLEEPTIME
 done
