@@ -214,6 +214,7 @@ EXPOSE 3478 3478/udp 5349 5349/udp
 
 VOLUME ["/var/lib/coturn"]
 
-ENTRYPOINT ["/usr/bin/dumb-init", "--", "docker-entrypoint.sh"]
+# ENTRYPOINT ["/usr/bin/dumb-init", "--", "docker-entrypoint.sh"]
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 CMD ["--log-file=stdout", "--external-ip=$(detect-external-ip)"]
