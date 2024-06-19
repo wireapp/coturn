@@ -12,6 +12,9 @@ port="$2"
 
 url="http://$host:$port/metrics"
 
+# Invoke drain mode (https://github.com/wireapp/coturn/pull/12)
+pkill --signal SIGUSR1 turnserver
+
 echo "Polling coturn status on $url"
 
 while true; do
