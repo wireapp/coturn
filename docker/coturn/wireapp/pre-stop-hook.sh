@@ -12,7 +12,8 @@ port="$2"
 
 url="http://$host:$port/metrics"
 
-coturn_pid=$(pgrep -f turnserver | head -n 1)
+coturn_exe=/usr/bin/turnserver
+coturn_pid=$(pgrep -f "$coturn_exe" | head -n 1)
 
 function log(){
     msg=$1
@@ -22,7 +23,7 @@ function log(){
 log "Sending signal to drain coturn"
 
 # Invoke drain mode (https://github.com/wireapp/coturn/pull/12)
-pkill -f --signal SIGUSR1 turnserver
+pkill -f --signal SIGUSR1 "$coturn_exe"
 
 log "Polling coturn status on $url"
 
