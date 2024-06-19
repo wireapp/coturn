@@ -23,16 +23,10 @@ function log(){
 log "Polling coturn status on $url"
 
 allocs=$(curl -s "$url" | grep -E '^turn_total_allocations' | cut -d' ' -f2)
-if [ "$?" != 0 ]; then
-    log "Could not retrieve metrics from coturn!"
-    exit 1
-fi
-
 if [ -z "$allocs" ]; then
-    log "No more active allocations, exiting"
-    exit 0
+    # nobody used the coturn server yet, which means the metric is absent, default to 0.
+    allocs=0
 fi
-
 # Note: there can be multiple allocation counts, e.g.
 # turn_total_allocations{type="UDP"} 0
 # turn_total_allocations{type="TCP"} 0
@@ -41,10 +35,6 @@ sum=0
 for num in $allocs; do
     (( sum += num ))
 done
-if [ "$sum" = 0 ]; then
-    log "No more active allocations, exiting"
-    exit 0
-fi
 
 log "Active allocations: [$sum] remaining."
 
@@ -53,13 +43,12 @@ log "Sending signal to drain coturn..."
 pkill -f --signal SIGUSR1 "$coturn_exe"
 
 sleep 1
-allocs2=$(curl -s "$url" | grep -E '^turn_total_allocations' | cut -d' ' -f2)
-if [ "$?" != 0 ]; then
-    log "After drain signal, cannot get metrics anymore. Oh well."
-else
-    log "After drain signal allocs:"
-    log "$allocs2"
+allocs=$(curl -s "$url" | grep -E '^turn_total_allocations' | cut -d' ' -f2)
+if [ -z "$allocs" ]; then
+    # nobody used the coturn server yet, which means the metric is absent, default to 0.
+    allocs=0
 fi
+log "After drain signal allocs: $allocs"
 
 while pgrep -f "$coturn_exe" > /dev/null; do
     log "$coturn_exe is still running. Waiting..."
