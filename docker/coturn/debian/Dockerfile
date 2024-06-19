@@ -188,6 +188,9 @@ RUN apt-get update \
  # Install `dig` tool for `detect-external-ip.sh`.
  && apt-get install -y --no-install-recommends --no-install-suggests \
             dnsutils \
+ # Install `dumb-init` to handle signaling (which we use for drain mode) correctly.
+ && apt-get install -y --no-install-recommends --no-install-suggests \
+            dumb-init \
  # Cleanup unnecessary stuff.
  && rm -rf /var/lib/apt/lists/*
 
@@ -211,6 +214,6 @@ EXPOSE 3478 3478/udp 5349 5349/udp
 
 VOLUME ["/var/lib/coturn"]
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "docker-entrypoint.sh"]
 
 CMD ["--log-file=stdout", "--external-ip=$(detect-external-ip)"]
