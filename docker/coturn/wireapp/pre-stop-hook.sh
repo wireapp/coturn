@@ -40,17 +40,14 @@ function getAllocations(){
     log "Active remaining turn_allocations: $sum"
 }
 
-log "Polling coturn status on $url ..."
 getAllocations
 
 # Invoke drain mode (https://github.com/wireapp/coturn/pull/12)
-log "Sending signal to drain coturn..."
 pkill -f --signal SIGUSR1 "$coturn_exe"
+log "Sent SIGUSR1 to $coturn_exe to start draining."
 
 while pgrep -f "$coturn_exe" > /dev/null; do
-    log "$coturn_exe is still running. Checking allocations then sleeping..."
+    log "$coturn_exe is still running"
     getAllocations
     sleep $SLEEPTIME
 done
-log "$coturn_exe seems to have finished draining. Exiting."
-exit 0
