@@ -187,6 +187,21 @@ allocation *get_allocation_ss(ts_ur_super_session *ss);
 
 ///////////////////////////////////////////////////////
 
+////// Rate limit for 401 Unauthorized //////
+
+#define RATE_LIMIT_MAX_REQUESTS 100
+#define RATE_LIMIT_WINDOW 60
+#define RATE_LIMIT_IP_ADDRESS_LENGTH 46
+#define RATE_LIMIT_ENTRY_EXPIRATION_TIME 600
+#define RATE_LIMIT_TABLE_SIZE 1024
+
+typedef struct {
+    char address[RATE_LIMIT_IP_ADDRESS_LENGTH];
+    time_t last_request_time;
+    time_t expiration_time;
+    int request_count;
+} RateLimitEntry;
+
 #ifdef __cplusplus
 }
 #endif

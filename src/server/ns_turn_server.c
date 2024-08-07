@@ -40,6 +40,10 @@
 
 ///////////////////////////////////////////
 
+static RateLimitEntry rate_limit_table[RATE_LIMIT_TABLE_SIZE] = {0};
+
+///////////////////////////////////////////
+
 #define FUNCSTART                                                                                                      \
   if (server && eve(server->verbose))                                                                                  \
   TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "%s:%d:start\n", __FUNCTION__, __LINE__)
@@ -142,6 +146,73 @@ static int read_client_connection(turn_turnserver *server, ts_ur_super_session *
                                   int can_resume, int count_usage);
 
 static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session *ss);
+
+
+/////////////////// rate limit //////////////////////////
+
+static RateLimitEntry* find_rate_limit_entry(const char *address) {
+    for (int i = 0; i < RATE_LIMIT_TABLE_SIZE; i++) {
+        if (strcmp(rate_limit_table[i].address, address) == 0) {
+            return &rate_limit_table[i];
+        }
+    }
+    return NULL;
+}
+
+static RateLimitEntry* create_rate_limit_entry(const char *address) {
+    for (int i = 0; i < RATE_LIMIT_TABLE_SIZE; i++) {
+        if (rate_limit_table[i].address[0] == '\0') {
+            strncpy(rate_limit_table[i].address, address, RATE_LIMIT_IP_ADDRESS_LENGTH - 1);
+            rate_limit_table[i].expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
+            return &rate_limit_table[i];
+        }
+    }
+    return NULL;
+}
+
+static void expire_entries() {
+    time_t current_time = time(NULL);
+    for (int i = 0; i < RATE_LIMIT_TABLE_SIZE; i++) {
+        if (rate_limit_table[i].address[0] != '\0' &&
+            rate_limit_table[i].expiration_time <= current_time) {
+            // Clear expired entry
+            rate_limit_table[i].address[0] = '\0';
+        }
+    }
+}
+
+int is_address_ratelimit(const char *address) {
+    time_t current_time = time(NULL);
+    RateLimitEntry *entry = find_rate_limit_entry(address);
+
+    if (entry == NULL) {
+        entry = create_rate_limit_entry(address);
+        if (entry == NULL) {
+            // Table is full, ignore rate limit
+            return 1;
+        }
+    } else {
+        // Delete expired entries, this is fine as long as the table is small
+        // TODO garbage collection outside of new connections
+        expire_entries();
+    }
+
+    if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW) {
+        // Expire request count
+        entry->request_count = 1;
+        entry->last_request_time = current_time;
+        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
+        return 1;
+    } else if (entry->request_count < RATE_LIMIT_MAX_REQUESTS) {
+        // Rate limit not hit, bump request_count
+        entry->request_count++;
+        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
+        return 1;
+    } else {
+        // Rate limit was exceeded by IP
+        return 0;
+    }
+}
 
 /////////////////// timer //////////////////////////
 
@@ -3915,6 +3986,21 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
     ioa_network_buffer_set_size(nbh, len);
 
     *resp_constructed = 1;
+  }
+
+  if(err_code == 401) {
+      char raddr[129];
+      addr_to_string(get_remote_addr_from_ioa_socket(ss->client_socket), raddr);
+
+      // Quick hack to grab IP. There is most likely an easier way of doing this. or maybe addr_to_string is the best we have for now.
+      char *colon_pos = strchr(raddr, ':');
+      if (colon_pos != NULL) {
+          *colon_pos = '\0';
+      }
+      if(!is_address_ratelimit(raddr)) {
+          no_response = 1;
+          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded from %s\n", raddr);
+      }
   }
 
   if (!no_response) {
