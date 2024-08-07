@@ -3922,7 +3922,7 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
       } else {
           // Rate limit excceded
           no_response = 1;
-          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded");
+          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded\n");
       }
       /*
       char raddr[129];
