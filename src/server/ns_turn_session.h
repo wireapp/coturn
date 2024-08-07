@@ -31,6 +31,8 @@
 #ifndef __TURN_SESSION__
 #define __TURN_SESSION__
 
+#include <time.h>
+
 #include "ns_turn_allocation.h"
 #include "ns_turn_ioalib.h"
 #include "ns_turn_maps.h"
@@ -186,6 +188,18 @@ int turn_session_info_copy_from(struct turn_session_info *tsi, ts_ur_super_sessi
 allocation *get_allocation_ss(ts_ur_super_session *ss);
 
 ///////////////////////////////////////////////////////
+
+#define MAX_RESPONSES_401 50
+#define RATE_LIMIT_401_WINDOW 120
+
+////// Rate limit for 401 Unauthorized //////
+
+typedef struct {
+    time_t last_request_time;
+    int request_count;
+} RateLimitData;
+
+extern RateLimitData rate_limit_data;
 
 #ifdef __cplusplus
 }

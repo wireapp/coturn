@@ -41,6 +41,11 @@
 #include <stdio.h>  // for snprintf
 #include <stdlib.h> // for free, malloc, calloc, realloc
 #include <string.h> // for memcpy, strlen, strcmp
+#include <time.h> // For rate limit
+
+///////////////////////////////////////////
+
+RateLimitData rate_limit_data = {0, 0};
 
 ///////////////////////////////////////////
 
@@ -3903,6 +3908,32 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
     ioa_network_buffer_set_size(nbh, len);
 
     *resp_constructed = 1;
+  }
+  if(err_code == 401) {
+      time_t current_time = time(NULL);
+
+      if (current_time - rate_limit_data.last_request_time > RATE_LIMIT_401_WINDOW) {
+          // Reset our rate limit when it expires
+          rate_limit_data.request_count = 1;
+          rate_limit_data.last_request_time = current_time;
+      } else if (rate_limit_data.request_count < MAX_RESPONSES_401) {
+          // Add to rate limit count
+          rate_limit_data.request_count++;
+      } else {
+          // Rate limit excceded
+          no_response = 1;
+      }
+      /*
+      char raddr[129];
+      addr_to_string(get_remote_addr_from_ioa_socket(ss->client_socket), raddr);
+
+      // Quick hack to grab IP. There is most likely an easier way of doing this. or maybe addr_to_string is the best we have for now.
+      char *colon_pos = strchr(raddr, ':');
+      if (colon_pos != NULL) {
+          *colon_pos = '\0';
+      }*/
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded");
+
   }
 
   if (!no_response) {
