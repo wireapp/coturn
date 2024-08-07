@@ -3920,19 +3920,19 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
           // Add to rate limit count
           rate_limit_data.request_count++;
       } else {
+          char raddr[129];
+          addr_to_string(get_remote_addr_from_ioa_socket(ss->client_socket), raddr);
+
+          // Quick hack to grab IP. There is most likely an easier way of doing this. or maybe addr_to_string is the best we have for now.
+          char *colon_pos = strchr(raddr, ':');
+          if (colon_pos != NULL) {
+              *colon_pos = '\0';
+          }
+
           // Rate limit excceded
           no_response = 1;
-          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded\n");
+          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded from %s\n", raddr);
       }
-      /*
-      char raddr[129];
-      addr_to_string(get_remote_addr_from_ioa_socket(ss->client_socket), raddr);
-
-      // Quick hack to grab IP. There is most likely an easier way of doing this. or maybe addr_to_string is the best we have for now.
-      char *colon_pos = strchr(raddr, ':');
-      if (colon_pos != NULL) {
-          *colon_pos = '\0';
-      }*/
   }
 
   if (!no_response) {
