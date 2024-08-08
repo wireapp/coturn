@@ -37,10 +37,11 @@
 #include "ns_turn_allocation.h"
 #include "ns_turn_ioalib.h"
 #include "ns_turn_utils.h"
+#include "ns_turn_rate_limit.h"
 
 ///////////////////////////////////////////
 
-static RateLimitEntry rate_limit_table[RATE_LIMIT_TABLE_SIZE] = {0};
+static RateLimitEntry *rate_limit_root = NULL;
 
 ///////////////////////////////////////////
 
@@ -150,51 +151,90 @@ static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session
 
 /////////////////// rate limit //////////////////////////
 
-static RateLimitEntry* find_rate_limit_entry(const char *address) {
-    for (int i = 0; i < RATE_LIMIT_TABLE_SIZE; i++) {
-        if (strcmp(rate_limit_table[i].address, address) == 0) {
-            return &rate_limit_table[i];
-        }
-    }
-    return NULL;
+RateLimitEntry* rate_limit_init_node(ioa_addr *address) {
+    RateLimitEntry *node = (RateLimitEntry *)malloc(sizeof(RateLimitEntry));
+    // copy address
+    memcpy(&node->address, address, sizeof(ioa_addr));
+    node->last_request_time = time(NULL);
+    node->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
+    node->request_count = 1;
+    node->left = NULL;
+    node->right = NULL;
+    return node;
 }
 
-static RateLimitEntry* create_rate_limit_entry(const char *address) {
-    for (int i = 0; i < RATE_LIMIT_TABLE_SIZE; i++) {
-        if (rate_limit_table[i].address[0] == '\0') {
-            strncpy(rate_limit_table[i].address, address, RATE_LIMIT_IP_ADDRESS_LENGTH - 1);
-            rate_limit_table[i].expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
-            return &rate_limit_table[i];
-        }
+// insert an a new IP into the binary search tree
+// root - the base node of our search tree
+// address - the ipv6 or ipv4 address
+void rate_limit_insert(RateLimitEntry **root, ioa_addr *address) {
+    if (*root == NULL) {
+        *root = rate_limit_init_node(address);
+        return;
     }
-    return NULL;
+    if (addr_less_eq(address, &(*root)->address)) {
+        rate_limit_insert(&(*root)->left, address);
+    } else {
+        rate_limit_insert(&(*root)->right, address);
+    }
 }
 
-static void expire_entries() {
+RateLimitEntry* rate_limit_search(RateLimitEntry *root, ioa_addr *address) {
+    if (root == NULL) {
+        return root;
+    } else if(addr_eq_no_port(&root->address, address)) {
+        return root;
+    }
+    if (addr_less_eq(address, &root->address)) {
+        return rate_limit_search(root->left, address);
+    } else {
+        return rate_limit_search(root->right, address);
+    }
+}
+
+RateLimitEntry* rate_limit_find_min(RateLimitEntry *root) {
+    while (root->left != NULL) {
+        root = root->left;
+    }
+    return root;
+}
+
+RateLimitEntry* rate_limit_delete(RateLimitEntry *root, int value) {
+    if (root == NULL) {
+        return root;
+    }
+    if (value < root->value) {
+        root->left = rate_limit_delete(root->left, value);
+    } else if (value > root->value) {
+        root->right = rate_limit_delete(root->right, value);
+    } else {
+        if (root->left == NULL) {
+            RateLimitEntry *temp = root->right;
+            free(root);
+            return temp;
+        } else if (root->right == NULL) {
+            RateLimitEntry *temp = root->left;
+            free(root);
+            return temp;
+        }
+        RateLimitEntry *temp = rate_limit_find_min(root->right);
+        root->value = temp->value;
+        root->right = rate_limit_delete(root->right, temp->value);
+    }
+    return root;
+}
+
+int is_address_ratelimit(const ioa_addr *address) {
     time_t current_time = time(NULL);
-    for (int i = 0; i < RATE_LIMIT_TABLE_SIZE; i++) {
-        if (rate_limit_table[i].address[0] != '\0' &&
-            rate_limit_table[i].expiration_time <= current_time) {
-            // Clear expired entry
-            rate_limit_table[i].address[0] = '\0';
-        }
-    }
-}
-
-int is_address_ratelimit(const char *address) {
-    time_t current_time = time(NULL);
-    RateLimitEntry *entry = find_rate_limit_entry(address);
+    RateLimitEntry *entry = rate_limit_search(rate_limit_root, address);
 
     if (entry == NULL) {
-        entry = create_rate_limit_entry(address);
-        if (entry == NULL) {
-            // Table is full, ignore rate limit
-            return 1;
-        }
+        // New entry, allow response
+        rate_limit_insert(&rate_limit_root, address);
+        return 1;
     } else {
         // Delete expired entries, this is fine as long as the table is small
         // TODO garbage collection outside of new connections
-        expire_entries();
+        //        expire_entries();
     }
 
     if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW) {
@@ -3989,16 +4029,13 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
   }
 
   if(err_code == 401) {
-      char raddr[129];
-      addr_to_string(get_remote_addr_from_ioa_socket(ss->client_socket), raddr);
+      ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
 
-      // Quick hack to grab IP. There is most likely an easier way of doing this. or maybe addr_to_string is the best we have for now.
-      char *colon_pos = strchr(raddr, ':');
-      if (colon_pos != NULL) {
-          *colon_pos = '\0';
-      }
-      if(!is_address_ratelimit(raddr)) {
+
+      if(!is_address_ratelimit(rate_limit_address)) {
           no_response = 1;
+          char raddr[129];
+          addr_to_string_no_port(rate_limit_address, raddr);
           TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded from %s\n", raddr);
       }
   }
