@@ -230,7 +230,7 @@ int is_address_ratelimit(const ioa_addr *address) {
     if (entry == NULL) {
         // New entry, allow response
         rate_limit_insert(&rate_limit_root, address);
-        return 1;
+        return 0;
     } else {
         // Delete expired entries, this is fine as long as the table is small
         // TODO garbage collection outside of new connections
@@ -242,15 +242,15 @@ int is_address_ratelimit(const ioa_addr *address) {
         entry->request_count = 1;
         entry->last_request_time = current_time;
         entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
-        return 1;
+        return 0;
     } else if (entry->request_count < RATE_LIMIT_MAX_REQUESTS) {
         // Rate limit not hit, bump request_count
         entry->request_count++;
         entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
-        return 1;
+        return 0;
     } else {
         // Rate limit was exceeded by IP
-        return 0;
+        return 1;
     }
 }
 
@@ -4032,7 +4032,7 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
       ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
 
 
-      if(!is_address_ratelimit(rate_limit_address)) {
+      if(is_address_ratelimit(rate_limit_address)) {
           no_response = 1;
           char raddr[129];
           addr_to_string_no_port(rate_limit_address, raddr);
