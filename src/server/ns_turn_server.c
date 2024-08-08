@@ -192,16 +192,16 @@ void rate_limit_insert(RateLimitEntry **root, ioa_addr *address) {
 }
 
 RateLimitEntry* rate_limit_search(RateLimitEntry *root, ioa_addr *address) {
-    if (root == NULL) {
-        return root;
-    } else if(addr_eq_no_port(&root->address, address)) {
-        return root;
+    while (root != NULL) {
+        if (addr_eq_no_port(&root->address, address)) {
+            return root;
+        } else if (addr_less_eq(address, &root->address)) {
+            root = root->left;
+        } else {
+            root = root->right;
+        }
     }
-    if (addr_less_eq(address, &root->address)) {
-        return rate_limit_search(root->left, address);
-    } else {
-        return rate_limit_search(root->right, address);
-    }
+    return NULL;
 }
 
 RateLimitEntry* rate_limit_find_min(RateLimitEntry *root) {
