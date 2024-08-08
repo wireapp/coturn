@@ -60,6 +60,17 @@ if [ $? -eq 0 ]; then
     echo OK
 else
     echo FAIL
-	exit $?
+    exit $?
 fi
 
+echo 'Running NOT rated limit by IP'
+../bin/turnutils_uclient  -e 127.0.0.1 -X -g -u user1 -W wrongsecret 127.0.0.1 > /dev/null
+../bin/turnutils_uclient  -e 127.0.0.1 -X -g -u user1 -W wrongsecret 127.0.0.1 > /dev/null &
+sleep 5
+grep '401 rate limit exceeded from' /tmp/coturn.log >/dev/null
+if [ $? -eq 1 ]; then
+    echo OK
+else
+    echo FAIL
+	exit $?
+fi
