@@ -39,9 +39,9 @@ extern "C" {
 
 ////// Rate limit for 401 Unauthorized //////
 
-#define RATE_LIMIT_MAX_REQUESTS 100
-#define RATE_LIMIT_WINDOW 60
-#define RATE_LIMIT_ENTRY_EXPIRATION_TIME 600
+#define RATE_LIMIT_MAX_REQUESTS_SECS 100
+#define RATE_LIMIT_WINDOW_SECS 60
+#define RATE_LIMIT_ENTRY_EXPIRATION_SECS 600
 
 typedef struct {
     ioa_addr *address;
