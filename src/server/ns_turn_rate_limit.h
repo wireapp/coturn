@@ -41,9 +41,7 @@ extern "C" {
 
 #define RATE_LIMIT_MAX_REQUESTS 100
 #define RATE_LIMIT_WINDOW 60
-#define RATE_LIMIT_IP_ADDRESS_LENGTH 46
 #define RATE_LIMIT_ENTRY_EXPIRATION_TIME 600
-#define RATE_LIMIT_TABLE_SIZE 1024
 
 typedef struct {
     ioa_addr *address;
