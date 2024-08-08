@@ -50,7 +50,6 @@ typedef struct {
     time_t last_request_time;
     time_t expiration_time;
     int request_count;
-    int value;
     struct RateLimitEntry *right;
     struct RateLimitEntry *left;
 } RateLimitEntry;
