@@ -171,10 +171,23 @@ void rate_limit_insert(RateLimitEntry **root, ioa_addr *address) {
         *root = rate_limit_init_node(address);
         return;
     }
-    if (addr_less_eq(address, &(*root)->address)) {
-        rate_limit_insert(&(*root)->left, address);
+
+    RateLimitEntry *current_node = *root;
+    RateLimitEntry *parent_node = NULL;
+
+    while (current_node != NULL) {
+        parent_node = current_node;
+        if (addr_less_eq(address, &current_node->address)) {
+            current_node = current_node->left;
+        } else {
+            current_node = current_node->right;
+        }
+    }
+
+    if (addr_less_eq(address, &parent_node->address)) {
+        parent_node->left = rate_limit_init_node(address);
     } else {
-        rate_limit_insert(&(*root)->right, address);
+        parent_node->right = rate_limit_init_node(address);
     }
 }
 
@@ -217,8 +230,8 @@ RateLimitEntry* rate_limit_delete(RateLimitEntry *root, int address) {
             return temp;
         }
         RateLimitEntry *temp = rate_limit_find_min(root->right);
-        root->value = temp->value;
-        root->right = rate_limit_delete(root->right, temp->value);
+        root->address = temp->address;
+        root->right = rate_limit_delete(root->right, temp->address);
     }
     return root;
 }
