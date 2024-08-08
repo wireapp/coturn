@@ -198,14 +198,14 @@ RateLimitEntry* rate_limit_find_min(RateLimitEntry *root) {
     return root;
 }
 
-RateLimitEntry* rate_limit_delete(RateLimitEntry *root, int value) {
+RateLimitEntry* rate_limit_delete(RateLimitEntry *root, int address) {
     if (root == NULL) {
         return root;
     }
-    if (value < root->value) {
-        root->left = rate_limit_delete(root->left, value);
-    } else if (value > root->value) {
-        root->right = rate_limit_delete(root->right, value);
+    if (addr_less_eq(address, root->address)) {
+        root->left = rate_limit_delete(root->left, address);
+    } else if (addr_less_eq(root->address, address)) {
+        root->right = rate_limit_delete(root->right, address);
     } else {
         if (root->left == NULL) {
             RateLimitEntry *temp = root->right;
