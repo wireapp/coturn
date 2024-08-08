@@ -4044,7 +4044,6 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
   if(err_code == 401) {
       ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
 
-
       if(is_address_ratelimit(rate_limit_address)) {
           no_response = 1;
           char raddr[129];
