@@ -156,7 +156,7 @@ RateLimitEntry* rate_limit_init_node(ioa_addr *address) {
     // copy address
     memcpy(&node->address, address, sizeof(ioa_addr));
     node->last_request_time = time(NULL);
-    node->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
+    node->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
     node->request_count = 1;
     node->left = NULL;
     node->right = NULL;
@@ -237,16 +237,16 @@ int is_address_ratelimit(const ioa_addr *address) {
         //        expire_entries();
     }
 
-    if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW) {
+    if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
         // Expire request count
         entry->request_count = 1;
         entry->last_request_time = current_time;
-        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
+        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
         return 0;
-    } else if (entry->request_count < RATE_LIMIT_MAX_REQUESTS) {
+    } else if (entry->request_count < RATE_LIMIT_MAX_REQUESTS_SECS) {
         // Rate limit not hit, bump request_count
         entry->request_count++;
-        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_TIME;
+        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
         return 0;
     } else {
         // Rate limit was exceeded by IP
