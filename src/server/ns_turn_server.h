@@ -209,6 +209,9 @@ struct _turn_turnserver {
   /* Federation params */
   ioa_addr federation_addr;
   void **federation_service;
+
+  /* Rate limit 401 Requests */
+  ur_addr_map *rate_limit_map;
 };
 
 const char *get_version(turn_turnserver *server);

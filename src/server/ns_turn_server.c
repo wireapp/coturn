@@ -38,6 +38,7 @@
 #include "ns_turn_ioalib.h"
 #include "ns_turn_utils.h"
 #include "ns_turn_rate_limit.h"
+#include "ns_turn_maps.h"
 
 ///////////////////////////////////////////
 
@@ -153,139 +154,50 @@ static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session
 TURN_MUTEX_DECLARE(rate_limit_main_mutex);
 int rate_limit_main_mutex_init = 0;
 
-RateLimitEntry* rate_limit_init_node(ioa_addr *address) {
+void rate_limit_init_node(turn_turnserver *server, ioa_addr *address) {
     RateLimitEntry *node = (RateLimitEntry *)malloc(sizeof(RateLimitEntry));
     // copy address
-    memcpy(&node->address, address, sizeof(ioa_addr));
-    node->last_request_time = time(NULL);
-    node->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
-    node->request_count = 1;
-    node->left = NULL;
-    node->right = NULL;
-    TURN_MUTEX_INIT(&(node->mutex));
-    return node;
+    ur_addr_map_value_type tbb = 5;
+    int request_count = 1;
+    int last_request_time = time(NULL);
+    int expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+
+    ur_addr_map_put_no_port(&(server->rate_limit_map), &address, request_count);
+    //ur_addr_map_put_no_port(server->rate_limit_map, &address, last_request_time);
+    //ur_addr_map_put_no_port(server->rate_limit_map, &address, expiration_time);
+
 }
 
-// insert an a new IP into the binary search tree
-// root - the base node of our search tree
-// address - the ipv6 or ipv4 address
-void rate_limit_insert(RateLimitEntry **root, ioa_addr *address) {
-    if(!rate_limit_main_mutex_init) {
-        TURN_MUTEX_INIT(&rate_limit_main_mutex);
-        rate_limit_main_mutex_init = 1;
-    }
-    TURN_MUTEX_LOCK((const turn_mutex *)&(rate_limit_main_mutex));
-
-    if (*root == NULL) {
-        *root = rate_limit_init_node(address);
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(rate_limit_main_mutex));
-        return;
-    }
-
-    RateLimitEntry *current_node = *root;
-    RateLimitEntry *parent_node = NULL;
-
-    while (current_node != NULL) {
-        parent_node = current_node;
-        if (addr_less_eq(address, &current_node->address)) {
-            current_node = current_node->left;
-        } else {
-            current_node = current_node->right;
-        }
-    }
-
-    if (addr_less_eq(address, &parent_node->address)) {
-        parent_node->left = rate_limit_init_node(address);
-    } else {
-        parent_node->right = rate_limit_init_node(address);
-    }
-    TURN_MUTEX_UNLOCK((const turn_mutex *)&(rate_limit_main_mutex));
-}
-
-RateLimitEntry* rate_limit_search(RateLimitEntry *root, ioa_addr *address) {
-    RateLimitEntry *parent = NULL;
-    while (root != NULL) {
-        TURN_MUTEX_LOCK((const turn_mutex *)&(root->mutex));
-        if (addr_eq_no_port(&root->address, address)) {
-            if (parent != NULL) {
-                TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-            }
-            TURN_MUTEX_UNLOCK((const turn_mutex *)&(root->mutex));
-            return root;
-        } else if (addr_less_eq(address, &root->address)) {
-            if (parent != NULL) {
-                TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-            }
-            parent = root;
-            root = root->left;
-        } else {
-            if (parent != NULL) {
-                TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-            }
-            parent = root;
-            root = root->right;
-        }
-    }
-    // No matches found? Unlock mutex.
-    if (parent != NULL) {
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-    }
-    if (root != NULL) { // Special case, no match found but only one node on tree
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(root->mutex));
-    }
-    return NULL;
-}
-
-RateLimitEntry* rate_limit_find_min(RateLimitEntry *root) {
-    if (root == NULL) {
-        return NULL;
-    }
-
-    RateLimitEntry *parent = NULL;
-    while (root->left != NULL) {
-        TURN_MUTEX_LOCK((const turn_mutex *)&(root->mutex));
-        if (parent != NULL) {
-            TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-        }
-        parent = root;
-        root = root->left;
-    }
-    if (parent != NULL) {
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-    }
-    return root;
-}
-
-int is_address_ratelimit(const ioa_addr *address) {
+int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
     time_t current_time = time(NULL);
-    RateLimitEntry *entry = rate_limit_search(rate_limit_root, address);
-
-    if (entry == NULL) {
-        // New entry, allow response
-        rate_limit_insert(&rate_limit_root, address);
-        return 0;
-    } else {
-        // Delete expired entries, this is fine as long as the table is small
-        // TODO garbage collection outside of new connections
-        //rate_limit_expire_entries(&rate_limit_root);
+    if (server->rate_limit_map == 0) {
+        server->rate_limit_map = (ur_addr_map*)malloc(sizeof(ur_addr_map));
+        ur_addr_map_init(server->rate_limit_map);
     }
-    TURN_MUTEX_LOCK((const turn_mutex *)&(entry->mutex));
-    if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
-        // Expire request count
-        entry->request_count = 1;
-        entry->last_request_time = current_time;
-        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+    int request_count_reset = 1;
+    int last_request_time = current_time;
+    int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+
+    ur_addr_map_value_type request_count = 0;
+    if(ur_addr_map_get_no_port(server->rate_limit_map, &address, &request_count)) {
+        TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "request count %i\n", request_count);
+    } else {
+        // New entry, allow response
+        rate_limit_init_node(server, address);
         return 0;
-    } else if (entry->request_count < RATE_LIMIT_MAX_REQUESTS_SECS) {
+    }
+    if (current_time - last_request_time > RATE_LIMIT_WINDOW_SECS) {
+        // Expire request count
+        return 0;
+    } else if (request_count < RATE_LIMIT_MAX_REQUESTS_SECS) {
         // Rate limit not hit, bump request_count
-        entry->request_count++;
-        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+        //int request_count++;
+        int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
         return 0;
     } else {
         // Rate limit was exceeded by IP
         return 1;
     }
-    TURN_MUTEX_UNLOCK((const turn_mutex *)&(entry->mutex));
 }
 
 /////////////////// timer //////////////////////////
@@ -4064,8 +3976,7 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
 
   if(err_code == 401) {
       ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
-
-      if(is_address_ratelimit(rate_limit_address)) {
+      if(is_address_ratelimit(server, rate_limit_address)) {
           no_response = 1;
           char raddr[129];
           addr_to_string_no_port(rate_limit_address, raddr);
@@ -5152,6 +5063,8 @@ void init_turn_server(turn_turnserver *server, turnserver_id id, int verbose, io
   server->response_origin_only_with_rfc5780 = response_origin_only_with_rfc5780;
 
   server->is_draining = 0;
+
+  server->rate_limit_map = 0;
 }
 
 ioa_engine_handle turn_server_get_engine(turn_turnserver *s) {
