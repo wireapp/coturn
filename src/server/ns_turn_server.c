@@ -150,8 +150,6 @@ static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session
 
 
 /////////////////// rate limit //////////////////////////
-TURN_MUTEX_DECLARE(rate_limit_main_mutex);
-int rate_limit_main_mutex_init = 0;
 
 RateLimitEntry* rate_limit_init_node(ioa_addr *address) {
     RateLimitEntry *node = (RateLimitEntry *)malloc(sizeof(RateLimitEntry));
@@ -162,7 +160,6 @@ RateLimitEntry* rate_limit_init_node(ioa_addr *address) {
     node->request_count = 1;
     node->left = NULL;
     node->right = NULL;
-    TURN_MUTEX_INIT(&(node->mutex));
     return node;
 }
 
@@ -170,15 +167,8 @@ RateLimitEntry* rate_limit_init_node(ioa_addr *address) {
 // root - the base node of our search tree
 // address - the ipv6 or ipv4 address
 void rate_limit_insert(RateLimitEntry **root, ioa_addr *address) {
-    if(!rate_limit_main_mutex_init) {
-        TURN_MUTEX_INIT(&rate_limit_main_mutex);
-        rate_limit_main_mutex_init = 1;
-    }
-    TURN_MUTEX_LOCK((const turn_mutex *)&(rate_limit_main_mutex));
-
     if (*root == NULL) {
         *root = rate_limit_init_node(address);
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(rate_limit_main_mutex));
         return;
     }
 
@@ -199,59 +189,49 @@ void rate_limit_insert(RateLimitEntry **root, ioa_addr *address) {
     } else {
         parent_node->right = rate_limit_init_node(address);
     }
-    TURN_MUTEX_UNLOCK((const turn_mutex *)&(rate_limit_main_mutex));
 }
 
 RateLimitEntry* rate_limit_search(RateLimitEntry *root, ioa_addr *address) {
-    RateLimitEntry *parent = NULL;
     while (root != NULL) {
-        TURN_MUTEX_LOCK((const turn_mutex *)&(root->mutex));
         if (addr_eq_no_port(&root->address, address)) {
-            if (parent != NULL) {
-                TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-            }
-            TURN_MUTEX_UNLOCK((const turn_mutex *)&(root->mutex));
             return root;
         } else if (addr_less_eq(address, &root->address)) {
-            if (parent != NULL) {
-                TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-            }
-            parent = root;
             root = root->left;
         } else {
-            if (parent != NULL) {
-                TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-            }
-            parent = root;
             root = root->right;
         }
-    }
-    // No matches found? Unlock mutex.
-    if (parent != NULL) {
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-    }
-    if (root != NULL) { // Special case, no match found but only one node on tree
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(root->mutex));
     }
     return NULL;
 }
 
 RateLimitEntry* rate_limit_find_min(RateLimitEntry *root) {
-    if (root == NULL) {
-        return NULL;
-    }
-
-    RateLimitEntry *parent = NULL;
     while (root->left != NULL) {
-        TURN_MUTEX_LOCK((const turn_mutex *)&(root->mutex));
-        if (parent != NULL) {
-            TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
-        }
-        parent = root;
         root = root->left;
     }
-    if (parent != NULL) {
-        TURN_MUTEX_UNLOCK((const turn_mutex *)&(parent->mutex));
+    return root;
+}
+
+RateLimitEntry* rate_limit_delete(RateLimitEntry *root, int address) {
+    if (root == NULL) {
+        return root;
+    }
+    if (addr_less_eq(address, root->address)) {
+        root->left = rate_limit_delete(root->left, address);
+    } else if (addr_less_eq(root->address, address)) {
+        root->right = rate_limit_delete(root->right, address);
+    } else {
+        if (root->left == NULL) {
+            RateLimitEntry *temp = root->right;
+            free(root);
+            return temp;
+        } else if (root->right == NULL) {
+            RateLimitEntry *temp = root->left;
+            free(root);
+            return temp;
+        }
+        RateLimitEntry *temp = rate_limit_find_min(root->right);
+        root->address = temp->address;
+        root->right = rate_limit_delete(root->right, temp->address);
     }
     return root;
 }
@@ -267,7 +247,7 @@ int is_address_ratelimit(const ioa_addr *address) {
     } else {
         // Delete expired entries, this is fine as long as the table is small
         // TODO garbage collection outside of new connections
-        //rate_limit_expire_entries(&rate_limit_root);
+        //        expire_entries();
     }
 
     if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {

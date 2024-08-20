@@ -50,7 +50,6 @@ typedef struct {
     int request_count;
     struct RateLimitEntry *right;
     struct RateLimitEntry *left;
-    TURN_MUTEX_DECLARE(mutex)
 } RateLimitEntry;
 
 #ifdef __cplusplus
