@@ -37,6 +37,11 @@
 #include "ns_turn_allocation.h"
 #include "ns_turn_ioalib.h"
 #include "ns_turn_utils.h"
+#include "ns_turn_rate_limit.h"
+
+///////////////////////////////////////////
+
+static RateLimitEntry *rate_limit_root = NULL;
 
 ///////////////////////////////////////////
 
@@ -142,6 +147,125 @@ static int read_client_connection(turn_turnserver *server, ts_ur_super_session *
                                   int can_resume, int count_usage);
 
 static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session *ss);
+
+
+/////////////////// rate limit //////////////////////////
+
+RateLimitEntry* rate_limit_init_node(ioa_addr *address) {
+    RateLimitEntry *node = (RateLimitEntry *)malloc(sizeof(RateLimitEntry));
+    // copy address
+    memcpy(&node->address, address, sizeof(ioa_addr));
+    node->last_request_time = time(NULL);
+    node->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+    node->request_count = 1;
+    node->left = NULL;
+    node->right = NULL;
+    return node;
+}
+
+// insert an a new IP into the binary search tree
+// root - the base node of our search tree
+// address - the ipv6 or ipv4 address
+void rate_limit_insert(RateLimitEntry **root, ioa_addr *address) {
+    if (*root == NULL) {
+        *root = rate_limit_init_node(address);
+        return;
+    }
+
+    RateLimitEntry *current_node = *root;
+    RateLimitEntry *parent_node = NULL;
+
+    while (current_node != NULL) {
+        parent_node = current_node;
+        if (addr_less_eq(address, &current_node->address)) {
+            current_node = current_node->left;
+        } else {
+            current_node = current_node->right;
+        }
+    }
+
+    if (addr_less_eq(address, &parent_node->address)) {
+        parent_node->left = rate_limit_init_node(address);
+    } else {
+        parent_node->right = rate_limit_init_node(address);
+    }
+}
+
+RateLimitEntry* rate_limit_search(RateLimitEntry *root, ioa_addr *address) {
+    while (root != NULL) {
+        if (addr_eq_no_port(&root->address, address)) {
+            return root;
+        } else if (addr_less_eq(address, &root->address)) {
+            root = root->left;
+        } else {
+            root = root->right;
+        }
+    }
+    return NULL;
+}
+
+RateLimitEntry* rate_limit_find_min(RateLimitEntry *root) {
+    while (root->left != NULL) {
+        root = root->left;
+    }
+    return root;
+}
+
+RateLimitEntry* rate_limit_delete(RateLimitEntry *root, int address) {
+    if (root == NULL) {
+        return root;
+    }
+    if (addr_less_eq(address, root->address)) {
+        root->left = rate_limit_delete(root->left, address);
+    } else if (addr_less_eq(root->address, address)) {
+        root->right = rate_limit_delete(root->right, address);
+    } else {
+        if (root->left == NULL) {
+            RateLimitEntry *temp = root->right;
+            free(root);
+            return temp;
+        } else if (root->right == NULL) {
+            RateLimitEntry *temp = root->left;
+            free(root);
+            return temp;
+        }
+        RateLimitEntry *temp = rate_limit_find_min(root->right);
+        root->address = temp->address;
+        root->right = rate_limit_delete(root->right, temp->address);
+    }
+    return root;
+}
+
+int is_address_ratelimit(const ioa_addr *address) {
+    time_t current_time = time(NULL);
+    RateLimitEntry *entry = rate_limit_search(rate_limit_root, address);
+
+    if (entry == NULL) {
+        // New entry, allow response
+        rate_limit_insert(&rate_limit_root, address);
+        return 0;
+    } else {
+        // Delete expired entries, this is fine as long as the table is small
+        // TODO garbage collection outside of new connections
+        //        expire_entries();
+    }
+
+    if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
+        // Expire request count
+        entry->request_count = 1;
+        entry->last_request_time = current_time;
+        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+        return 0;
+    } else if (entry->request_count < RATE_LIMIT_MAX_REQUESTS_SECS) {
+        // Rate limit not hit, bump request_count
+        entry->request_count++;
+        entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+        return 0;
+    } else {
+        // Rate limit was exceeded by IP
+        return 1;
+    }
+}
 
 /////////////////// timer //////////////////////////
 
@@ -3915,6 +4039,17 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
     ioa_network_buffer_set_size(nbh, len);
 
     *resp_constructed = 1;
+  }
+
+  if(err_code == 401) {
+      ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
+
+      if(is_address_ratelimit(rate_limit_address)) {
+          no_response = 1;
+          char raddr[129];
+          addr_to_string_no_port(rate_limit_address, raddr);
+          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded from %s\n", raddr);
+      }
   }
 
   if (!no_response) {
