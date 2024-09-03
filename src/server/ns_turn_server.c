@@ -269,7 +269,7 @@ int is_address_ratelimit(const ioa_addr *address) {
         // TODO garbage collection outside of new connections
         //rate_limit_expire_entries(&rate_limit_root);
     }
-
+    TURN_MUTEX_LOCK((const turn_mutex *)&(entry->mutex));
     if (current_time - entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
         // Expire request count
         entry->request_count = 1;
@@ -285,6 +285,7 @@ int is_address_ratelimit(const ioa_addr *address) {
         // Rate limit was exceeded by IP
         return 1;
     }
+    TURN_MUTEX_UNLOCK((const turn_mutex *)&(entry->mutex));
 }
 
 /////////////////// timer //////////////////////////
