@@ -42,9 +42,6 @@
 
 ///////////////////////////////////////////
 
-static RateLimitEntry *rate_limit_root = NULL;
-
-///////////////////////////////////////////
 
 #define FUNCSTART                                                                                                      \
   if (server && eve(server->verbose))                                                                                  \
@@ -157,19 +154,16 @@ int rate_limit_main_mutex_init = 0;
 
 void rate_limit_init_node(turn_turnserver *server, ioa_addr *address) {
   // copy address
-  ur_addr_map_value_type tbb = 5;
+  RateLimitEntry *rate_limit_entry = (RateLimitEntry*)malloc(sizeof(RateLimitEntry));
+  rate_limit_entry->request_count = 1;
+  rate_limit_entry->last_request_time = time(NULL);
+  rate_limit_entry->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+
   int request_count = 1;
   int last_request_time = time(NULL);
   int expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
-      char raddr[129];
-    addr_to_string_no_port(address, raddr);
-    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "TEST: %s\n", raddr);
-  ur_addr_map_put_no_port(rate_limit_map, address, request_count);
-  TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "INIT_NODE\n");
-  TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "request count: %i\n", request_count);
-  //ur_addr_map_put_no_port(server->rate_limit_map, &address, last_request_time);
-  //ur_addr_map_put_no_port(server->rate_limit_map, &address, expiration_time);
 
+  ur_addr_map_put_no_port(rate_limit_map, address, (ur_addr_map_value_type)rate_limit_entry);
 }
 
 int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
@@ -181,37 +175,30 @@ int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
     rate_limit_map = (ur_addr_map*)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
     ur_addr_map_init(rate_limit_map);
   }
-  const int request_count_reset = 1;
   int last_request_time = current_time;
   int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
 
-  ur_addr_map_value_type *request_count = 0;
-  if(ur_addr_map_get_no_port(rate_limit_map, address, &request_count)) {
-    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "ENTRY FOUND\n");
-    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "request count %i\n", request_count);
+  ur_addr_map_value_type *ratelimit_ptr = 0;
+  if(ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
   } else {
     // New entry, allow response
-    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "NEW ENTRY\n");
     rate_limit_init_node(server, address);
     return 0;
   }
-  request_count = (int)request_count+1;
-  TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "request count %i\n", request_count);
-  ur_addr_map_put_no_port(rate_limit_map, address,  request_count);
-  /*
-  if (current_time - last_request_time > RATE_LIMIT_WINDOW_SECS) {
+  RateLimitEntry *rate_limit_entry = (RateLimitEntry*)ratelimit_ptr;
+
+  if (current_time - rate_limit_entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
     // Expire request count
     return 0;
-  } else if (request_count < RATE_LIMIT_MAX_REQUESTS_SECS) {
+  } else if (rate_limit_entry->request_count < RATE_LIMIT_MAX_REQUESTS_PER_WINDOW) {
     // Rate limit not hit, bump request_count
-    //int request_count++;
-    int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+    rate_limit_entry->request_count = (int)rate_limit_entry->request_count+1;
+    rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
     return 0;
   } else {
     // Rate limit was exceeded by IP
     return 1;
   }
-  */
 }
 
 /////////////////// timer //////////////////////////
@@ -3990,7 +3977,6 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
 
   if(err_code == 401) {
       ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
-      TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "PRE TEST\n");
       if(is_address_ratelimit(server, rate_limit_address)) {
           no_response = 1;
           char raddr[129];

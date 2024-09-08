@@ -39,17 +39,14 @@ extern "C" {
 
 ////// Rate limit for 401 Unauthorized //////
 
-#define RATE_LIMIT_MAX_REQUESTS_SECS 100
+#define RATE_LIMIT_MAX_REQUESTS_PER_WINDOW 100
 #define RATE_LIMIT_WINDOW_SECS 60
 #define RATE_LIMIT_ENTRY_EXPIRATION_SECS 600
 
 typedef struct {
-    ioa_addr *address;
     time_t last_request_time;
     time_t expiration_time;
     int request_count;
-    struct RateLimitEntry *right;
-    struct RateLimitEntry *left;
     TURN_MUTEX_DECLARE(mutex)
 } RateLimitEntry;
 
