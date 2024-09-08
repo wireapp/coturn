@@ -169,7 +169,6 @@ void rate_limit_init_node(turn_turnserver *server, ioa_addr *address) {
 int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
   time_t current_time = time(NULL);
   if (rate_limit_map == 0) {
-    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "INIT_MAP MAP AMAP\n");
     //    server->rate_limit_map = (ur_addr_map*)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
     //rate_limit_map = (ur_addr_map*)malloc(sizeof(ur_addr_map));
     rate_limit_map = (ur_addr_map*)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
@@ -185,14 +184,17 @@ int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
     rate_limit_init_node(server, address);
     return 0;
   }
-  RateLimitEntry *rate_limit_entry = (RateLimitEntry*)ratelimit_ptr;
+  RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(uintptr_t)ratelimit_ptr;
 
   if (current_time - rate_limit_entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
-    // Expire request count
+    rate_limit_entry->request_count = 1;
+    rate_limit_entry->last_request_time = last_request_time;
+    rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
     return 0;
   } else if (rate_limit_entry->request_count < RATE_LIMIT_MAX_REQUESTS_PER_WINDOW) {
     // Rate limit not hit, bump request_count
     rate_limit_entry->request_count = (int)rate_limit_entry->request_count+1;
+    rate_limit_entry->last_request_time = last_request_time;
     rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
     return 0;
   } else {
@@ -3977,11 +3979,11 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
 
   if(err_code == 401) {
       ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
-      if(is_address_ratelimit(server, rate_limit_address)) {
+      if (is_address_ratelimit(server, rate_limit_address)) {
           no_response = 1;
           char raddr[129];
           addr_to_string_no_port(rate_limit_address, raddr);
-          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded from %s\n", raddr);
+          TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded from %s, response not sent\n", raddr);
       }
   }
 
