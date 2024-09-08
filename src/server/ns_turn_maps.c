@@ -719,7 +719,7 @@ static size_t addr_list_size(const addr_list_header *slh) {
   return ret;
 }
 
-static addr_elem *addr_list_get(addr_list_header *slh, const ioa_addr *key) {
+static addr_elem *_addr_list_get(addr_list_header *slh, const ioa_addr *key, int port) {
 
   if (!slh || !key)
     return NULL;
@@ -729,8 +729,14 @@ static addr_elem *addr_list_get(addr_list_header *slh, const ioa_addr *key) {
   for (i = 0; i < ADDR_ARRAY_SIZE; ++i) {
     addr_elem *elem = &(slh->main_list[i]);
     if (elem->value) {
-      if (addr_eq(&(elem->key), key)) {
-        return elem;
+      if (port) {
+        if (addr_eq(&(elem->key), key)) {
+          return elem;
+        }
+      } else {
+        if (addr_eq_no_port(&(elem->key), key)) {
+          return elem;
+        }
       }
     }
   }
@@ -739,8 +745,64 @@ static addr_elem *addr_list_get(addr_list_header *slh, const ioa_addr *key) {
     for (i = 0; i < slh->extra_sz; ++i) {
       addr_elem *elem = &(slh->extra_list[i]);
       if (elem->value) {
+        if (port) {
+          if (addr_eq(&(elem->key), key)) {
+            return elem;
+          }
+        } else {
+          if (addr_eq_no_port(&(elem->key), key)) {
+            return elem;
+          }
+        }
+      }
+    }
+  }
+
+  return NULL;
+}
+
+static addr_elem *addr_list_get_no_port(addr_list_header *slh, const ioa_addr *key) {
+  _addr_list_get(slh, key, 0);
+}
+
+static addr_elem *addr_list_get(addr_list_header *slh, const ioa_addr *key) {
+  _addr_list_get(slh, key, 1);
+}
+
+static const addr_elem *_addr_list_get_const(const addr_list_header *slh, const ioa_addr *key, int port) {
+
+  if (!slh || !key)
+    return NULL;
+
+  size_t i;
+
+  for (i = 0; i < ADDR_ARRAY_SIZE; ++i) {
+    const addr_elem *elem = &(slh->main_list[i]);
+    if (elem->value) {
+      if (port) {
         if (addr_eq(&(elem->key), key)) {
           return elem;
+        }
+      } else {
+        if (addr_eq_no_port(&(elem->key), key)) {
+          return elem;
+        }
+      }
+    }
+  }
+
+  if (slh->extra_list) {
+    for (i = 0; i < slh->extra_sz; ++i) {
+      const addr_elem *elem = &(slh->extra_list[i]);
+      if (elem->value) {
+        if (port) {
+          if (addr_eq(&(elem->key), key)) {
+            return elem;
+          }
+        } else {
+          if (addr_eq_no_port(&(elem->key), key)) {
+            return elem;
+          }
         }
       }
     }
@@ -750,63 +812,11 @@ static addr_elem *addr_list_get(addr_list_header *slh, const ioa_addr *key) {
 }
 
 static const addr_elem *addr_list_get_const_no_port(const addr_list_header *slh, const ioa_addr *key) {
-
-  if (!slh || !key)
-    return NULL;
-
-  size_t i;
-
-  for (i = 0; i < ADDR_ARRAY_SIZE; ++i) {
-    const addr_elem *elem = &(slh->main_list[i]);
-    if (elem->value) {
-      if (addr_eq_no_port(&(elem->key), key)) {
-        return elem;
-      }
-    }
-  }
-
-  if (slh->extra_list) {
-    for (i = 0; i < slh->extra_sz; ++i) {
-      const addr_elem *elem = &(slh->extra_list[i]);
-      if (elem->value) {
-        if (addr_eq_no_port(&(elem->key), key)) {
-          return elem;
-        }
-      }
-    }
-  }
-
-  return NULL;
+  _addr_list_get_const(slh, key, 0);
 }
 
 static const addr_elem *addr_list_get_const(const addr_list_header *slh, const ioa_addr *key) {
-
-  if (!slh || !key)
-    return NULL;
-
-  size_t i;
-
-  for (i = 0; i < ADDR_ARRAY_SIZE; ++i) {
-    const addr_elem *elem = &(slh->main_list[i]);
-    if (elem->value) {
-      if (addr_eq(&(elem->key), key)) {
-        return elem;
-      }
-    }
-  }
-
-  if (slh->extra_list) {
-    for (i = 0; i < slh->extra_sz; ++i) {
-      const addr_elem *elem = &(slh->extra_list[i]);
-      if (elem->value) {
-        if (addr_eq(&(elem->key), key)) {
-          return elem;
-        }
-      }
-    }
-  }
-
-  return NULL;
+  _addr_list_get_const(slh, key, 1);
 }
 
 ////////// ADDR MAPS ////////////////////////////////////////////
@@ -835,75 +845,29 @@ void ur_addr_map_clean(ur_addr_map *map) {
     memset(map, 0, sizeof(ur_addr_map));
   }
 }
-#include "ns_turn_utils.h"
+
 /**
  * @ret:
  * 0 - success
  * -1 - error
  * if the addr key exists, the value is updated.
  */
-int ur_addr_map_put_no_port(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value) {
-    if (!ur_addr_map_valid(map))
-    return -1;
-
-  else {
-    addr_list_header *slh = get_addr_list_header_no_port(map, key);
-
-    addr_elem *elem = addr_list_get(slh, key);
-    if (elem) {
-        elem->value = value;
-    } else {
-      addr_list_add(slh, key, value);
-    }
-
-    return 0;
-  }
-}
-
-/**
- * @ret:
- * 1 - success
- * 0 - not found
- */
-
-int ur_addr_map_get_no_port(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value) {
-    if (!ur_addr_map_valid(map)) {
-        return 0;
-    }
-    else {
-
-    const addr_list_header *slh = get_addr_list_header_no_port(map, key);
-
-    const addr_elem *elem = addr_list_get_const_no_port(slh, key);
-    if (elem) {
-        TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "value %i\n", (int)elem->value);
-        if (value) {
-        *value = elem->value;
-            TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "value %i\n", value);
-
-        }
-      return 1;
-    }
-
-    return 0;
-  }
-}
-/**
- * @ret:
- * 0 - success
- * -1 - error
- * if the addr key exists, the value is updated.
- */
-int ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value) {
+int _ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value, int port) {
 
   if (!ur_addr_map_valid(map))
     return -1;
 
   else {
+    addr_list_header *slh = NULL;
+    addr_elem *elem = NULL;
+    if (port) {
+      slh = get_addr_list_header(map, key);
+      elem = addr_list_get(slh, key);
+    } else {
+      slh = get_addr_list_header_no_port(map, key);
+      elem = addr_list_get_no_port(slh, key);
+    }
 
-    addr_list_header *slh = get_addr_list_header(map, key);
-
-    addr_elem *elem = addr_list_get(slh, key);
     if (elem) {
       elem->value = value;
     } else {
@@ -916,19 +880,42 @@ int ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type valu
 
 /**
  * @ret:
+ * 0 - success
+ * -1 - error
+ * if the addr key exists, the value is updated.
+ */
+int ur_addr_map_put_no_port(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value) {
+  _ur_addr_map_put(map, key, value, 0);
+}
+
+int ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value) {
+  _ur_addr_map_put(map, key, value, 1);
+}
+
+/**
+ * @ret:
  * 1 - success
  * 0 - not found
  */
-int ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value) {
+int _ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value, int port) {
 
   if (!ur_addr_map_valid(map))
     return 0;
 
   else {
 
-    const addr_list_header *slh = get_addr_list_header(map, key);
+    const addr_list_header *slh = NULL;
+    const addr_elem *elem = NULL;
 
-    const addr_elem *elem = addr_list_get_const(slh, key);
+    if (port) {
+      slh = get_addr_list_header(map, key);
+      elem = addr_list_get_const(slh, key);
+
+    } else {
+      slh = get_addr_list_header_no_port(map, key);
+      elem = addr_list_get_const_no_port(slh, key);
+    }
+
     if (elem) {
       if (value)
         *value = elem->value;
@@ -937,6 +924,19 @@ int ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_typ
 
     return 0;
   }
+}
+
+/**
+ * @ret:
+ * 1 - success
+ * 0 - not found
+ */
+int ur_addr_map_get_no_port(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value) {
+  _ur_addr_map_get(map, key, value, 0);
+}
+
+int ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value) {
+  _ur_addr_map_get(map, key, value, 1);
 }
 
 /**
