@@ -181,6 +181,7 @@ struct _ur_addr_map;
 typedef struct _ur_addr_map ur_addr_map;
 
 typedef void (*ur_addr_map_func)(ur_addr_map_value_type);
+typedef int (*ur_addr_map_cond_func)(ur_addr_map_value_type);
 
 void ur_addr_map_init(ur_addr_map *map);
 void ur_addr_map_clean(ur_addr_map *map);
@@ -218,6 +219,8 @@ void ur_addr_map_foreach(ur_addr_map *map, ur_addr_map_func func);
 
 size_t ur_addr_map_num_elements(const ur_addr_map *map);
 size_t ur_addr_map_size(const ur_addr_map *map);
+
+int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func);
 
 //////////////// UR STRING MAP //////////////////
 

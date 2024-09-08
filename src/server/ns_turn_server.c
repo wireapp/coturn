@@ -152,7 +152,7 @@ ur_addr_map *rate_limit_map = 0;
 TURN_MUTEX_DECLARE(rate_limit_main_mutex);
 int rate_limit_main_mutex_init = 0;
 
-void rate_limit_init_node(turn_turnserver *server, ioa_addr *address) {
+void rate_limit_add_node(turn_turnserver *server, ioa_addr *address) {
   // copy address
   RateLimitEntry *rate_limit_entry = (RateLimitEntry*)malloc(sizeof(RateLimitEntry));
   rate_limit_entry->request_count = 1;
@@ -166,39 +166,50 @@ void rate_limit_init_node(turn_turnserver *server, ioa_addr *address) {
   ur_addr_map_put_no_port(rate_limit_map, address, (ur_addr_map_value_type)rate_limit_entry);
 }
 
+ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value) {
+  time_t current_time = time(NULL);
+  RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(ur_map_value_type)value;
+  if (rate_limit_entry->expiration_time < current_time)
+    return 1;
+  return 0;
+}
+
 int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
+  /* Housekeeping, prune the map when ADDR_MAP_SIZE is hit and delete expired items */
   time_t current_time = time(NULL);
   if (rate_limit_map == 0) {
-    //    server->rate_limit_map = (ur_addr_map*)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
-    //rate_limit_map = (ur_addr_map*)malloc(sizeof(ur_addr_map));
     rate_limit_map = (ur_addr_map*)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
     ur_addr_map_init(rate_limit_map);
   }
-  int last_request_time = current_time;
+
+  if (ur_addr_map_num_elements(rate_limit_map) >= ADDR_MAP_SIZE) {
+    addr_list_foreach_del_condition(rate_limit_map, ratelimit_delete_expired);
+  }
+
   int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
 
   ur_addr_map_value_type *ratelimit_ptr = 0;
-  if(ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
+  if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
   } else {
     // New entry, allow response
-    rate_limit_init_node(server, address);
+    rate_limit_add_node(server, address);
     return 0;
   }
   RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(uintptr_t)ratelimit_ptr;
 
   if (current_time - rate_limit_entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
+    /* Check if request is inside the ratelimit window; reset the count and request time */
     rate_limit_entry->request_count = 1;
-    rate_limit_entry->last_request_time = last_request_time;
+    rate_limit_entry->last_request_time = current_time;
     rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
     return 0;
   } else if (rate_limit_entry->request_count < RATE_LIMIT_MAX_REQUESTS_PER_WINDOW) {
-    // Rate limit not hit, bump request_count
-    rate_limit_entry->request_count = (int)rate_limit_entry->request_count+1;
-    rate_limit_entry->last_request_time = last_request_time;
+    /* Check if request count is below requests per window; increment the count */
+    rate_limit_entry->request_count = rate_limit_entry->request_count+1;
     rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
     return 0;
   } else {
-    // Rate limit was exceeded by IP
+    /* Request is outside of defined window and count, request is ratelimited */
     return 1;
   }
 }
