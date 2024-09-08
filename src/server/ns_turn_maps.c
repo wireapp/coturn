@@ -1014,12 +1014,11 @@ size_t ur_addr_map_size(const ur_addr_map *map) {
   return ret;
 }
 
-#include "ns_turn_utils.h"
 int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func) {
 
   if (!ur_addr_map_valid(map))
     return 0;
-  
+
   int count = 0;
   uint32_t i = 0;
 
@@ -1027,9 +1026,8 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
     addr_list_header *slh = &(map->lists[i]);
 
     if (slh && func) {
-
       size_t i;
-  
+
       for (i = 0; i < ADDR_ARRAY_SIZE; ++i) {
         addr_elem *elem = &(slh->main_list[i]);
         if (elem->value) {
@@ -1038,7 +1036,6 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
             memset(&(elem->key), 0, sizeof(ioa_addr));
             elem->value = 0;
             count = count++;
-            TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "deleted norm\n");
           }
         }
       }
@@ -1052,7 +1049,6 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
               memset(&(elem->key), 0, sizeof(ioa_addr));
               elem->value = 0;
               count = count++;
-              TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "deleted extra\n");
             }
           }
         }
