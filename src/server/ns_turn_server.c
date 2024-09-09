@@ -197,7 +197,7 @@ int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
   TURN_MUTEX_LOCK(&rate_limit_main_mutex);
 
   if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
-    RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(uintptr_t)ratelimit_ptr;
+    RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(ur_map_value_type)ratelimit_ptr;
 
     if (current_time - rate_limit_entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
       /* Check if request is inside the ratelimit window; reset the count and request time */
