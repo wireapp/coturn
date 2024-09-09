@@ -46,7 +46,6 @@ int ratelimit_delete_expired(ur_map_value_type value);
 
 #define RATE_LIMIT_MAX_REQUESTS_PER_WINDOW 100
 #define RATE_LIMIT_WINDOW_SECS 60
-#define RATE_LIMIT_ENTRY_EXPIRATION_SECS 600
 
 typedef struct {
   time_t last_request_time;
