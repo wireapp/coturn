@@ -150,7 +150,6 @@ static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session
 /////////////////// rate limit //////////////////////////
 ur_addr_map *rate_limit_map = 0;
 TURN_MUTEX_DECLARE(rate_limit_main_mutex);
-int rate_limit_main_mutex_init = 0;
 
 void rate_limit_add_node(turn_turnserver *server, ioa_addr *address) {
   // copy address
@@ -178,40 +177,50 @@ int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
   /* Housekeeping, prune the map when ADDR_MAP_SIZE is hit and delete expired items */
   time_t current_time = time(NULL);
   if (rate_limit_map == 0) {
+    TURN_MUTEX_INIT(&rate_limit_main_mutex);
+    TURN_MUTEX_LOCK(&rate_limit_main_mutex);
     rate_limit_map = (ur_addr_map*)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
     ur_addr_map_init(rate_limit_map);
+    TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   }
 
   if (ur_addr_map_num_elements(rate_limit_map) >= ADDR_MAP_SIZE) {
+    TURN_MUTEX_LOCK(&rate_limit_main_mutex);
     addr_list_foreach_del_condition(rate_limit_map, ratelimit_delete_expired);
+    TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   }
 
   int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
 
   ur_addr_map_value_type *ratelimit_ptr = 0;
+  int returnValue = 0;
+  TURN_MUTEX_LOCK(&rate_limit_main_mutex);
+
   if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
+    RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(uintptr_t)ratelimit_ptr;
+
+    if (current_time - rate_limit_entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
+      /* Check if request is inside the ratelimit window; reset the count and request time */
+      rate_limit_entry->request_count = 1;
+      rate_limit_entry->last_request_time = current_time;
+      rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+      returnValue = 0;
+    } else if (rate_limit_entry->request_count < RATE_LIMIT_MAX_REQUESTS_PER_WINDOW) {
+      /* Check if request count is below requests per window; increment the count */
+      rate_limit_entry->request_count = rate_limit_entry->request_count+1;
+      rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
+      returnValue = 0;
+    } else {
+      /* Request is outside of defined window and count, request is ratelimited */
+      returnValue = 1;
+    }
   } else {
     // New entry, allow response
     rate_limit_add_node(server, address);
-    return 0;
+    returnValue = 0;
   }
-  RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(uintptr_t)ratelimit_ptr;
-
-  if (current_time - rate_limit_entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
-    /* Check if request is inside the ratelimit window; reset the count and request time */
-    rate_limit_entry->request_count = 1;
-    rate_limit_entry->last_request_time = current_time;
-    rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
-    return 0;
-  } else if (rate_limit_entry->request_count < RATE_LIMIT_MAX_REQUESTS_PER_WINDOW) {
-    /* Check if request count is below requests per window; increment the count */
-    rate_limit_entry->request_count = rate_limit_entry->request_count+1;
-    rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
-    return 0;
-  } else {
-    /* Request is outside of defined window and count, request is ratelimited */
-    return 1;
-  }
+  TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
+  return returnValue;
 }
 
 /////////////////// timer //////////////////////////
@@ -5077,8 +5086,6 @@ void init_turn_server(turn_turnserver *server, turnserver_id id, int verbose, io
   server->response_origin_only_with_rfc5780 = response_origin_only_with_rfc5780;
 
   server->is_draining = 0;
-
-  server->rate_limit_map = 0;
 }
 
 ioa_engine_handle turn_server_get_engine(turn_turnserver *s) {
