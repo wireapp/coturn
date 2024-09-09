@@ -181,7 +181,7 @@ struct _ur_addr_map;
 typedef struct _ur_addr_map ur_addr_map;
 
 typedef void (*ur_addr_map_func)(ur_addr_map_value_type);
-typedef int (*ur_addr_map_cond_func)(ur_addr_map_value_type);
+typedef int (ur_addr_map_cond_func)(ur_addr_map_value_type);
 
 void ur_addr_map_init(ur_addr_map *map);
 void ur_addr_map_clean(ur_addr_map *map);

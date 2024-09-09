@@ -47,12 +47,12 @@ void ratelimit_add_node(ioa_addr *address) {
   ur_addr_map_put_no_port(rate_limit_map, address, (ur_addr_map_value_type)rateLimitEntry);
 }
 
-ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value) {
+int ratelimit_delete_expired(ur_map_value_type value) {
   time_t current_time = time(NULL);
   ratelimit_entry *rateLimitEntry = (ratelimit_entry*)(void*)(ur_map_value_type)value;
   if (rateLimitEntry->last_request_time < current_time)
-    return (ur_addr_map_cond_func)1;
-  return (ur_addr_map_cond_func)0;
+    return 1;
+  return 0;
 }
 
 int ratelimit_is_address_limited(ioa_addr *address) {
