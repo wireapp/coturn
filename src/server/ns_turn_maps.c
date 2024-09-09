@@ -1032,7 +1032,7 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
         addr_elem *elem = &(slh->main_list[i]);
         if (elem->value) {
           if (func(elem->value)) {
-            free(elem->value);
+            free((void *)elem->value);
             memset(&(elem->key), 0, sizeof(ioa_addr));
             elem->value = 0;
             count = count++;
@@ -1045,7 +1045,7 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
           addr_elem *elem = &(slh->extra_list[i]);
           if (elem->value) {
             if (func(elem->value)) {
-              free(elem->value);
+              free((void *)elem->value);
               memset(&(elem->key), 0, sizeof(ioa_addr));
               elem->value = 0;
               count = count++;
