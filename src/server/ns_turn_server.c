@@ -190,7 +190,7 @@ int is_address_ratelimit(ioa_addr *address) {
 
   int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
 
-  ur_addr_map_value_type ratelimit_ptr = NULL;
+  ur_addr_map_value_type ratelimit_ptr = 0;
   int returnValue = 0;
 
   if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
