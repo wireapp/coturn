@@ -48,7 +48,7 @@ typedef struct {
   time_t expiration_time;
   uint32_t request_count;
   TURN_MUTEX_DECLARE(mutex);
-} RateLimitEntry;
+} rate_limit_entry;
 
 #ifdef __cplusplus
 }

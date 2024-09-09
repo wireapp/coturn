@@ -210,12 +210,14 @@ int is_address_ratelimit(const ioa_addr *address) {
       returnValue = 0;
     } else if (rate_limit_entry->request_count < RATE_LIMIT_MAX_REQUESTS_PER_WINDOW) {
       /* Check if request count is below requests per window; increment the count */
-      rate_limit_entry->request_count = rate_limit_entry->request_count+1;
+      if (rate_limit_entry->request_count < UINT32_MAX)
+        rate_limit_entry->request_count = ++rate_limit_entry->request_count;
       rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
       returnValue = 0;
     } else {
       /* Request is outside of defined window and count, request is ratelimited */
-      rate_limit_entry->request_count = rate_limit_entry->request_count+1;
+      if (rate_limit_entry->request_count < UINT32_MAX)
+        rate_limit_entry->request_count = ++rate_limit_entry->request_count;
       rate_limit_entry->last_request_time = current_time;
       rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
       returnValue = 1;
