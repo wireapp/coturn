@@ -166,8 +166,8 @@ ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value) {
   time_t current_time = time(NULL);
   RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(ur_map_value_type)value;
   if (rate_limit_entry->last_request_time < current_time)
-    return 1;
-  return 0;
+    return (ur_addr_map_cond_func)1;
+  return (ur_addr_map_cond_func)0;
 }
 
 int is_address_ratelimit(ioa_addr *address) {
@@ -188,7 +188,6 @@ int is_address_ratelimit(ioa_addr *address) {
     addr_list_foreach_del_condition(rate_limit_map, ratelimit_delete_expired);
     TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   }
-
   ur_addr_map_value_type ratelimit_ptr = 0;
   int returnValue = 0;
 
@@ -4003,7 +4002,7 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
       if (is_address_ratelimit(rate_limit_address)) {
           no_response = 1;
           char raddr[129];
-          addr_to_string_no_port(rate_limit_address, raddr);
+          addr_to_string_no_port(rate_limit_address, (unsigned char *)raddr);
           TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "401 rate limit exceeded from %s, response not sent\n", raddr);
       }
   }
