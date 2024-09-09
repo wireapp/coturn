@@ -169,7 +169,7 @@ ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value) {
   return 0;
 }
 
-int is_address_ratelimit(const ioa_addr *address) {
+int is_address_ratelimit(ioa_addr *address) {
   /* Housekeeping, prune the map when ADDR_MAP_SIZE is hit and delete expired items */
   time_t current_time = time(NULL);
 
@@ -190,7 +190,7 @@ int is_address_ratelimit(const ioa_addr *address) {
 
   int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
 
-  ur_addr_map_value_type *ratelimit_ptr = NULL;
+  ur_addr_map_value_type ratelimit_ptr = NULL;
   int returnValue = 0;
 
   if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
