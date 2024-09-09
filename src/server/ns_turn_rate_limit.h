@@ -45,7 +45,6 @@ extern "C" {
 
 typedef struct {
   time_t last_request_time;
-  time_t expiration_time;
   uint32_t request_count;
   TURN_MUTEX_DECLARE(mutex);
 } RateLimitEntry;

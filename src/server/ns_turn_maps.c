@@ -1019,7 +1019,7 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
   if (!ur_addr_map_valid(map))
     return 0;
 
-  int count = 0;
+  uint32_t count = 0;
   uint32_t i = 0;
 
   for (i = 0; i < ADDR_MAP_SIZE; i++) {

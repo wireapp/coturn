@@ -150,9 +150,7 @@ static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session
 ur_addr_map *rate_limit_map = NULL;
 TURN_MUTEX_DECLARE(rate_limit_main_mutex);
 
-time_t get_ratelimit_expiration_time() {
-  return time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
-}
+int is_address_ratelimit(ioa_addr *address);
 
 void rate_limit_add_node(ioa_addr *address) {
   // copy address
@@ -160,7 +158,6 @@ void rate_limit_add_node(ioa_addr *address) {
   TURN_MUTEX_INIT(&(rate_limit_entry->mutex));
   rate_limit_entry->request_count = 1;
   rate_limit_entry->last_request_time = time(NULL);
-  rate_limit_entry->expiration_time = get_ratelimit_expiration_time();
 
   ur_addr_map_put_no_port(rate_limit_map, address, (ur_addr_map_value_type)rate_limit_entry);
 }
@@ -168,7 +165,7 @@ void rate_limit_add_node(ioa_addr *address) {
 ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value) {
   time_t current_time = time(NULL);
   RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(ur_map_value_type)value;
-  if (rate_limit_entry->expiration_time < current_time)
+  if (rate_limit_entry->last_request_time < current_time)
     return 1;
   return 0;
 }
@@ -203,20 +200,17 @@ int is_address_ratelimit(ioa_addr *address) {
       /* Check if request is inside the ratelimit window; reset the count and request time */
       rate_limit_entry->request_count = 1;
       rate_limit_entry->last_request_time = current_time;
-      rate_limit_entry->expiration_time = get_ratelimit_expiration_time();
       returnValue = 0;
     } else if (rate_limit_entry->request_count < RATE_LIMIT_MAX_REQUESTS_PER_WINDOW) {
       /* Check if request count is below requests per window; increment the count */
       if (rate_limit_entry->request_count < UINT32_MAX)
         rate_limit_entry->request_count = ++rate_limit_entry->request_count;
-      rate_limit_entry->expiration_time = get_ratelimit_expiration_time();
       returnValue = 0;
     } else {
       /* Request is outside of defined window and count, request is ratelimited */
       if (rate_limit_entry->request_count < UINT32_MAX)
         rate_limit_entry->request_count = ++rate_limit_entry->request_count;
       rate_limit_entry->last_request_time = current_time;
-      rate_limit_entry->expiration_time = get_ratelimit_expiration_time();
       returnValue = 1;
     }
     TURN_MUTEX_UNLOCK(&(rate_limit_entry->mutex));
