@@ -39,7 +39,7 @@ TURN_MUTEX_DECLARE(rate_limit_main_mutex);
 
 void rate_limit_add_node(ioa_addr *address) {
   // copy address
-  ratelimit_entry *rateLimitEntry = (RateLimitEntry*)malloc(sizeof(RateLimitEntry));
+  ratelimit_entry *rateLimitEntry = (ratelimit_entry *)malloc(sizeof(ratelimit_entry));
   TURN_MUTEX_INIT(&(rateLimitEntry->mutex));
   rateLimitEntry->request_count = 1;
   rateLimitEntry->last_request_time = time(NULL);
@@ -49,7 +49,7 @@ void rate_limit_add_node(ioa_addr *address) {
 
 ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value) {
   time_t current_time = time(NULL);
-  RateLimitEntry *rateLimitEntry = (RateLimitEntry*)(void*)(ur_map_value_type)value;
+  ratelimit_entry *rateLimitEntry = (ratelimit_entry*)(void*)(ur_map_value_type)value;
   if (rateLimitEntry->last_request_time < current_time)
     return (ur_addr_map_cond_func)1;
   return (ur_addr_map_cond_func)0;
@@ -77,7 +77,7 @@ int is_address_ratelimit(ioa_addr *address) {
   int returnValue = 0;
 
   if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
-    ratelimit_entry *rateLimitEntry = (RateLimitEntry*)(void*)(ur_map_value_type)ratelimit_ptr;
+    ratelimit_entry *rateLimitEntry = (ratelimit_entry *)(void *)(ur_map_value_type)ratelimit_ptr;
     TURN_MUTEX_LOCK(&(rateLimitEntry->mutex));
 
     if (current_time - rateLimitEntry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
