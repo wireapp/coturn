@@ -185,7 +185,7 @@ int is_address_ratelimit(const ioa_addr *address) {
   if (ur_addr_map_num_elements(rate_limit_map) >= ADDR_MAP_SIZE) {
     TURN_MUTEX_LOCK(&rate_limit_main_mutex);
     addr_list_foreach_del_condition(rate_limit_map, ratelimit_delete_expired);
-    5TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
+    TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   }
 
   int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
