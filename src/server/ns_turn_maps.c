@@ -1035,7 +1035,7 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
             free((void *)elem->value);
             memset(&(elem->key), 0, sizeof(ioa_addr));
             elem->value = 0;
-            count = count++;
+            count++;
           }
         }
       }
@@ -1048,7 +1048,7 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
               free((void *)elem->value);
               memset(&(elem->key), 0, sizeof(ioa_addr));
               elem->value = 0;
-              count = count++;
+              count++;
             }
           }
         }
