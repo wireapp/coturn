@@ -38,10 +38,9 @@
 extern "C" {
 #endif
 
-int is_address_ratelimit(ioa_addr *address);
-void rate_limit_add_node(ioa_addr *address);
+int ratelimit_is_address_limted(ioa_addr *address);
+void ratelimit_add_node(ioa_addr *address);
 ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value);
-int is_address_ratelimit(ioa_addr *address);
   
 ////// Rate limit for 401 Unauthorized //////
 
