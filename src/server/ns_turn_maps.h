@@ -192,6 +192,7 @@ void ur_addr_map_clean(ur_addr_map *map);
  * -1 - error
  * if the addr key exists, the value is updated.
  */
+int _ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value, int port);
 int ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value);
 int ur_addr_map_put_no_port(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value);
 
@@ -200,6 +201,7 @@ int ur_addr_map_put_no_port(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_t
  * 1 - success
  * 0 - not found
  */
+int _ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value, int port);
 int ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value);
 int ur_addr_map_get_no_port(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value);
 

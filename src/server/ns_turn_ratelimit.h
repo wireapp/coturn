@@ -32,11 +32,17 @@
 #define __TURN_RATE_LIMIT__
 
 #include "ns_turn_session.h"
+#include "ns_turn_ioaddr.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+int is_address_ratelimit(ioa_addr *address);
+void rate_limit_add_node(ioa_addr *address);
+ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value);
+int is_address_ratelimit(ioa_addr *address);
+  
 ////// Rate limit for 401 Unauthorized //////
 
 #define RATE_LIMIT_MAX_REQUESTS_PER_WINDOW 100
