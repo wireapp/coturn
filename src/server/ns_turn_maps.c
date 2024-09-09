@@ -812,11 +812,11 @@ static const addr_elem *_addr_list_get_const(const addr_list_header *slh, const 
 }
 
 static const addr_elem *addr_list_get_const_no_port(const addr_list_header *slh, const ioa_addr *key) {
-  _addr_list_get_const(slh, key, 0);
+  return _addr_list_get_const(slh, key, 0);
 }
 
 static const addr_elem *addr_list_get_const(const addr_list_header *slh, const ioa_addr *key) {
-  _addr_list_get_const(slh, key, 1);
+  return _addr_list_get_const(slh, key, 1);
 }
 
 ////////// ADDR MAPS ////////////////////////////////////////////
@@ -885,11 +885,11 @@ int _ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type val
  * if the addr key exists, the value is updated.
  */
 int ur_addr_map_put_no_port(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value) {
-  _ur_addr_map_put(map, key, value, 0);
+  return _ur_addr_map_put(map, key, value, 0);
 }
 
 int ur_addr_map_put(ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type value) {
-  _ur_addr_map_put(map, key, value, 1);
+  return _ur_addr_map_put(map, key, value, 1);
 }
 
 /**
@@ -932,11 +932,11 @@ int _ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_ty
  * 0 - not found
  */
 int ur_addr_map_get_no_port(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value) {
-  _ur_addr_map_get(map, key, value, 0);
+  return _ur_addr_map_get(map, key, value, 0);
 }
 
 int ur_addr_map_get(const ur_addr_map *map, ioa_addr *key, ur_addr_map_value_type *value) {
-  _ur_addr_map_get(map, key, value, 1);
+  return _ur_addr_map_get(map, key, value, 1);
 }
 
 /**
