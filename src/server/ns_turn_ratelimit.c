@@ -73,6 +73,7 @@ int ratelimit_is_address_limited(ioa_addr *address) {
     addr_list_foreach_del_condition(rate_limit_map, ratelimit_delete_expired);
     TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   }
+
   ur_addr_map_value_type ratelimit_ptr = 0;
   int returnValue = 0;
 
