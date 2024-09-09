@@ -42,7 +42,6 @@
 
 ///////////////////////////////////////////
 
-
 #define FUNCSTART                                                                                                      \
   if (server && eve(server->verbose))                                                                                  \
   TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "%s:%d:start\n", __FUNCTION__, __LINE__)
@@ -148,7 +147,7 @@ static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session
 
 
 /////////////////// rate limit //////////////////////////
-ur_addr_map *rate_limit_map = 0;
+ur_addr_map *rate_limit_map = NULL;
 TURN_MUTEX_DECLARE(rate_limit_main_mutex);
 
 void rate_limit_add_node(ioa_addr *address) {
@@ -158,10 +157,6 @@ void rate_limit_add_node(ioa_addr *address) {
   rate_limit_entry->request_count = 1;
   rate_limit_entry->last_request_time = time(NULL);
   rate_limit_entry->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
-
-  int request_count = 1;
-  int last_request_time = time(NULL);
-  int expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
 
   ur_addr_map_put_no_port(rate_limit_map, address, (ur_addr_map_value_type)rate_limit_entry);
 }
@@ -178,7 +173,7 @@ int is_address_ratelimit(const ioa_addr *address) {
   /* Housekeeping, prune the map when ADDR_MAP_SIZE is hit and delete expired items */
   time_t current_time = time(NULL);
 
-  if (rate_limit_map == 0) {
+  if (rate_limit_map == NULL) {
     TURN_MUTEX_INIT(&rate_limit_main_mutex);
     TURN_MUTEX_LOCK(&rate_limit_main_mutex);
 
@@ -190,12 +185,12 @@ int is_address_ratelimit(const ioa_addr *address) {
   if (ur_addr_map_num_elements(rate_limit_map) >= ADDR_MAP_SIZE) {
     TURN_MUTEX_LOCK(&rate_limit_main_mutex);
     addr_list_foreach_del_condition(rate_limit_map, ratelimit_delete_expired);
-    TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
+    5TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   }
 
   int expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
 
-  ur_addr_map_value_type *ratelimit_ptr = 0;
+  ur_addr_map_value_type *ratelimit_ptr = NULL;
   int returnValue = 0;
 
   if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
