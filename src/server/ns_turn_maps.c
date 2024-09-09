@@ -762,11 +762,11 @@ static addr_elem *_addr_list_get(addr_list_header *slh, const ioa_addr *key, int
 }
 
 static addr_elem *addr_list_get_no_port(addr_list_header *slh, const ioa_addr *key) {
-  _addr_list_get(slh, key, 0);
+  return _addr_list_get(slh, key, 0);
 }
 
 static addr_elem *addr_list_get(addr_list_header *slh, const ioa_addr *key) {
-  _addr_list_get(slh, key, 1);
+  return _addr_list_get(slh, key, 1);
 }
 
 static const addr_elem *_addr_list_get_const(const addr_list_header *slh, const ioa_addr *key, int port) {
