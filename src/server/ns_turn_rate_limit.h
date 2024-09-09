@@ -44,9 +44,10 @@ extern "C" {
 #define RATE_LIMIT_ENTRY_EXPIRATION_SECS 600
 
 typedef struct {
-    time_t last_request_time;
-    time_t expiration_time;
-    int request_count;
+  time_t last_request_time;
+  time_t expiration_time;
+  uint32_t request_count;
+  TURN_MUTEX_DECLARE(mutex);
 } RateLimitEntry;
 
 #ifdef __cplusplus

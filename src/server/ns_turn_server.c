@@ -151,9 +151,10 @@ static int need_stun_authentication(turn_turnserver *server, ts_ur_super_session
 ur_addr_map *rate_limit_map = 0;
 TURN_MUTEX_DECLARE(rate_limit_main_mutex);
 
-void rate_limit_add_node(turn_turnserver *server, ioa_addr *address) {
+void rate_limit_add_node(ioa_addr *address) {
   // copy address
   RateLimitEntry *rate_limit_entry = (RateLimitEntry*)malloc(sizeof(RateLimitEntry));
+  TURN_MUTEX_INIT(&(rate_limit_entry->mutex));
   rate_limit_entry->request_count = 1;
   rate_limit_entry->last_request_time = time(NULL);
   rate_limit_entry->expiration_time = time(NULL) + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
@@ -173,13 +174,15 @@ ur_addr_map_cond_func ratelimit_delete_expired(ur_map_value_type value) {
   return 0;
 }
 
-int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
+int is_address_ratelimit(const ioa_addr *address) {
   /* Housekeeping, prune the map when ADDR_MAP_SIZE is hit and delete expired items */
   time_t current_time = time(NULL);
+
   if (rate_limit_map == 0) {
     TURN_MUTEX_INIT(&rate_limit_main_mutex);
     TURN_MUTEX_LOCK(&rate_limit_main_mutex);
-    rate_limit_map = (ur_addr_map*)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
+
+    rate_limit_map = (ur_addr_map*)malloc(sizeof(ur_addr_map));
     ur_addr_map_init(rate_limit_map);
     TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   }
@@ -194,10 +197,10 @@ int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
 
   ur_addr_map_value_type *ratelimit_ptr = 0;
   int returnValue = 0;
-  TURN_MUTEX_LOCK(&rate_limit_main_mutex);
 
   if (ur_addr_map_get_no_port(rate_limit_map, address, &ratelimit_ptr)) {
     RateLimitEntry *rate_limit_entry = (RateLimitEntry*)(void*)(ur_map_value_type)ratelimit_ptr;
+    TURN_MUTEX_LOCK(&(rate_limit_entry->mutex));
 
     if (current_time - rate_limit_entry->last_request_time > RATE_LIMIT_WINDOW_SECS) {
       /* Check if request is inside the ratelimit window; reset the count and request time */
@@ -212,14 +215,19 @@ int is_address_ratelimit(turn_turnserver *server, const ioa_addr *address) {
       returnValue = 0;
     } else {
       /* Request is outside of defined window and count, request is ratelimited */
+      rate_limit_entry->request_count = rate_limit_entry->request_count+1;
+      rate_limit_entry->last_request_time = current_time;
+      rate_limit_entry->expiration_time = current_time + RATE_LIMIT_ENTRY_EXPIRATION_SECS;
       returnValue = 1;
     }
+    TURN_MUTEX_UNLOCK(&(rate_limit_entry->mutex));
   } else {
     // New entry, allow response
-    rate_limit_add_node(server, address);
+    TURN_MUTEX_LOCK(&rate_limit_main_mutex);
+    rate_limit_add_node(address);
+    TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
     returnValue = 0;
   }
-  TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
   return returnValue;
 }
 
@@ -3999,7 +4007,7 @@ static int handle_turn_command(turn_turnserver *server, ts_ur_super_session *ss,
 
   if(err_code == 401) {
       ioa_addr *rate_limit_address = get_remote_addr_from_ioa_socket(ss->client_socket);
-      if (is_address_ratelimit(server, rate_limit_address)) {
+      if (is_address_ratelimit(rate_limit_address)) {
           no_response = 1;
           char raddr[129];
           addr_to_string_no_port(rate_limit_address, raddr);
