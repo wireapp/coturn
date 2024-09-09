@@ -55,17 +55,21 @@ int ratelimit_delete_expired(ur_map_value_type value) {
   return 0;
 }
 
+void ratelimit_init_map() {
+  TURN_MUTEX_INIT(&rate_limit_main_mutex);
+  TURN_MUTEX_LOCK(&rate_limit_main_mutex);
+
+  rate_limit_map = (ur_addr_map*)malloc(sizeof(ur_addr_map));
+  ur_addr_map_init(rate_limit_map);
+  TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
+}
+
 int ratelimit_is_address_limited(ioa_addr *address) {
   /* Housekeeping, prune the map when ADDR_MAP_SIZE is hit and delete expired items */
   time_t current_time = time(NULL);
 
   if (rate_limit_map == NULL) {
-    TURN_MUTEX_INIT(&rate_limit_main_mutex);
-    TURN_MUTEX_LOCK(&rate_limit_main_mutex);
-
-    rate_limit_map = (ur_addr_map*)malloc(sizeof(ur_addr_map));
-    ur_addr_map_init(rate_limit_map);
-    TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
+    ratelimit_init_map();
   }
 
   if (ur_addr_map_num_elements(rate_limit_map) >= ADDR_MAP_SIZE) {
@@ -90,6 +94,7 @@ int ratelimit_is_address_limited(ioa_addr *address) {
       /* Check if request count is below requests per window; increment the count */
       if (rateLimitEntry->request_count < UINT32_MAX)
         rateLimitEntry->request_count++;
+      rateLimitEntry->last_request_time = current_time;
       returnValue = 0;
     } else {
       /* Request is outside of defined window and count, request is ratelimited */
