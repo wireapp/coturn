@@ -26,9 +26,9 @@ coturnTurnListenPort: 3478
 coturnMetricsListenPort: 9641
 coturnTurnTlsListenPort: 5349
 
-# coturnTurnListenIP: "1.2.3.4" # can also be __COTURN_EXT_IP__, __COTURN_POD_IP__,__COTURN_HOST_IP__
-coturnTurnExternalIP: null
-# coturnTurnRelayIP:
+coturnTurnListenIP: "__COTURN_POD_IP__" # "1.2.3.4" # can also be __COTURN_EXT_IP__, __COTURN_POD_IP__,__COTURN_HOST_IP__
+coturnTurnRelayIP: "__COTURN_POD_IP__"
+coturnTurnExternalIP: "__COTURN_EXT_IP__"
 # coturnPrometheusIP:
 # coturnFederationListeningIP:
 
