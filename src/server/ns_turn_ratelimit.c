@@ -86,7 +86,12 @@ int ratelimit_is_address_limited(ioa_addr *address, int max_requests, int window
   *address_new = *address;
   addr_set_port(address_new, 0);
 
+  /* Set global lock for `ur_addr_map_get` */
+  TURN_MUTEX_LOCK(&rate_limit_main_mutex);
   if (ur_addr_map_get(rate_limit_map, address_new, &ratelimit_ptr)) {
+    /* Unlock global lock from `ur_addr_map_get` */
+    TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
+
     free(address_new);
     ratelimit_entry *rateLimitEntry = (ratelimit_entry *)(void *)(ur_map_value_type)ratelimit_ptr;
     TURN_MUTEX_LOCK(&(rateLimitEntry->mutex));
@@ -105,6 +110,9 @@ int ratelimit_is_address_limited(ioa_addr *address, int max_requests, int window
       TURN_MUTEX_UNLOCK(&(rateLimitEntry->mutex));
       return 0;
     } else {
+      /* Unlock global lock from `ur_addr_map_get` */
+      TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
+
       /* Request is outside of defined window and count, request is ratelimited */
       if (rateLimitEntry->request_count < UINT32_MAX)
         rateLimitEntry->request_count++;
