@@ -29,11 +29,11 @@ data:
     pidfile="/var/tmp/turnserver.pid"
 
     ## turn, stun.
-    listening-ip={{ default "__COTURN_EXT_IP__" .Values.coturnTurnListenIP }}
+    listening-ip={{ .Values.coturnTurnListenIP }}
     listening-port={{ .Values.coturnTurnListenPort }}
-    relay-ip={{ default "__COTURN_EXT_IP__" .Values.coturnTurnRelayIP }}
+    relay-ip={{ .Values.coturnTurnRelayIP }}
     {{- if .Values.coturnTurnExternalIP }}
-    external-ip={{ default "__COTURN_EXT_IP__" .Values.coturnTurnExternalIP }}
+    external-ip={{ .Values.coturnTurnExternalIP }}
     {{- end }}
     realm=dummy.io
     no-stun-backward-compatibility
