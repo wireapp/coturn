@@ -75,7 +75,7 @@ spec:
         {{- end }}
       initContainers:
         - name: get-external-ip
-          image: bitnamilegacy/kubectl:1.29.11
+          image: registry.k8s.io/kubectl:v1.29.11
           resources:
             {{- toYaml .Values.initResources | nindent 12 }}
           volumeMounts:
