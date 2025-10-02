@@ -85,7 +85,9 @@ spec:
         {{- end }}
       initContainers:
         - name: get-external-ip
-          image: bitnami/kubectl:1.29.11
+          image: bitnamilegacy/kubectl:1.29.11
+          resources:
+            {{- toYaml .Values.initResources | nindent 12 }}
           volumeMounts:
             - name: external-ip
               mountPath: /external-ip
@@ -105,7 +107,7 @@ spec:
               while [ "$count" -lt "$max_tries" ]; do
                 # In the cloud, this setting is available to indicate the true IP address
                 addr=$(kubectl get node $NODE_NAME -ojsonpath='{.status.addresses[?(@.type=="ExternalIP")].address}')
-                
+
                 # On on-prem we allow people to set "wire.com/external-ip" to be used if no ExternalIP is detected
                 if [ -z "$addr" ]; then
                   addr=$(kubectl get node $NODE_NAME -ojsonpath='{.metadata.annotations.wire\.com/external-ip}')
