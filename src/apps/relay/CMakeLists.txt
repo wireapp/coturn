@@ -48,6 +48,8 @@ set(HEADER_FILES
     mainrelay.h
     turn_admin_server.h
     dtls_listener.h
+    federation.h
+    hostcheck.h
     libtelnet.h
     ns_ioalib_impl.h
     ns_sm.h
@@ -65,6 +67,8 @@ set(SOURCE_FILES
     turn_admin_server.c
     tls_listener.c
     dtls_listener.c
+    federation.c
+    hostcheck.c
     ns_ioalib_engine_impl.c
     turn_ports.c
     http_server.c

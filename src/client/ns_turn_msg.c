@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -1033,7 +1034,7 @@ bool stun_set_allocate_request_str(uint8_t *buf, size_t *len, uint32_t lifetime,
 bool stun_set_allocate_response_str(uint8_t *buf, size_t *len, stun_tid *tid, const ioa_addr *relayed_addr1,
                                     const ioa_addr *relayed_addr2, const ioa_addr *reflexive_addr, uint32_t lifetime,
                                     uint32_t max_lifetime, int error_code, const uint8_t *reason,
-                                    uint64_t reservation_token, char *mobile_id) {
+                                    uint64_t reservation_token, char *mobile_id, uint16_t federation_cid) {
 
   if (!error_code) {
 
@@ -1079,6 +1080,11 @@ bool stun_set_allocate_response_str(uint8_t *buf, size_t *len, stun_tid *tid, co
       if (!stun_attr_add_str(buf, len, STUN_ATTRIBUTE_MOBILITY_TICKET, (uint8_t *)mobile_id, (int)strlen(mobile_id))) {
         return false;
       }
+    }
+
+    if(federation_cid) {
+       if(stun_attr_add_channel_number_str(buf, len, federation_cid) < 0) 
+         return -1;
     }
 
   } else {

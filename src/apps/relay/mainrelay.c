@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -34,10 +35,12 @@
 
 #include "mainrelay.h"
 #include "dbdrivers/dbdriver.h"
+#include "federation.h"
 
 #include "prom_server.h"
 #include <assert.h>
 #include <limits.h>
+#include "ns_turn_ratelimit.h"
 
 #if defined(WINDOWS)
 #include <iphlpapi.h>
@@ -154,7 +157,7 @@ turn_params_t turn_params = {
 
     {"", ""},                                                                 /*redis_statsdb*/
     false,                                                                    /*use_redis_statsdb*/
-    {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL}, /*listener*/
+    {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL, NULL, NULL}, /*listener*/
     {NULL, 0},                                                                /*ip_whitelist*/
     {NULL, 0},                                                                /*ip_blacklist*/
     NEV_UNKNOWN,                                                              /*net_engine_version*/
@@ -197,6 +200,16 @@ turn_params_t turn_params = {
     false, /*drain_turn_server*/
     false, /*stop_turn_server*/
 
+    /////////////// FEDERATION SERVER ///////////////
+    0,   // federation_listening_ip
+    0,   // federation_listening_port
+    0,   // federation_no_dtls
+    "",  // federation_cert_file
+    "",  // federation_pkey_file
+    "",  // federation_pkey_pwd
+    0,   // federation_dtls_client_ctx
+    0,   // federation_dtls_server_ctx
+
     /////////////// MISC PARAMS ////////////////
     false,                              /* stun_only */
     false,                              /* no_stun */
@@ -211,6 +224,7 @@ turn_params_t turn_params = {
     false,                              /* mobility */
     TURN_CREDENTIALS_NONE,              /* ct */
     false,                              /* use_auth_secret_with_timestamp */
+    false,                              /* use_zrest_auth_secret */
     0,                                  /* max_bps */
     0,                                  /* bps_capacity */
     0,                                  /* bps_capacity_allocated */
@@ -242,6 +256,11 @@ turn_params_t turn_params = {
     false, /* respond_http_unsupported */
     true,  /* drop_invalid_packets */
     false  /* drop_invalid_packets_log */
+
+    ///////// Ratelimt /////////
+    RATELIMIT_DEFAULT_MAX_REQUESTS_PER_WINDOW, /* 401-req-limit */
+    RATELIMIT_DEFAULT_WINDOW_SECS,             /* 401-window */
+    NULL                                       /* 401-allowlist */
 };
 
 //////////////// OpenSSL Init //////////////////////
@@ -274,6 +293,7 @@ static void reload_ssl_certs(evutil_socket_t sock, short events, void *args);
 
 static void shutdown_handler(evutil_socket_t sock, short events, void *args);
 static void drain_handler(evutil_socket_t sock, short events, void *args);
+static void ratelimit_update_allowlist_handler(evutil_socket_t sock, short events, void *args);
 
 //////////////////////////////////////////////////
 
@@ -1017,6 +1037,18 @@ static char Usage[] =
     "						that option must be used several times in the command line, each entry "
     "must\n"
     "						have form \"-X public-ip/private-ip\", to map all involved addresses.\n"
+    " --federation-listening-ip	<ip>		The IP address to bind to for federated UDP or DTLS traffic\n"
+    " --federation-listening-port	<port>		The port to bind to for federated UDP or DTLS traffic\n"
+    " --federation-no-dtls				Disables DTLS for federation.  If specified then UDP is used for federation.\n"
+    " --federation-cert		<filename>	Federation certificate file, PEM format. Same file search rules\n"
+    "						applied as for the configuration file.\n"
+    "						If federation-no-dtls is true then this parameter is not needed.\n"
+    " --federation-pkey		<filename>	Federation private key file, PEM format. Same file search rules\n"
+    "						applied as for the configuration file.\n"
+    "						If federation-no-dtls is true then this parameter is not needed.\n"
+    " --federation-pkey-pwd		<password>	If the federation private key file is encrypted, then this password will be used.\n"
+    " --federation-remote_whilelist  <hostname>[,<issuer>]	List of acceptable certificate hostname and optional issuer name pairs for federation\n"
+    "						DTLS mutual authentication validation.\n"
     " --allow-loopback-peers				Allow peers on the loopback addresses (127.x.x.x and ::1).\n"
     " --no-multicast-peers				Disallow peers on well-known broadcast addresses (224.0.0.0 "
     "and above, and FFXX:*).\n"
@@ -1173,6 +1205,8 @@ static char Usage[] =
     "						by a separate program, so this is why it is 'dynamic'.\n"
     "						Multiple shared secrets can be used (both in the database and in the "
     "\"static\" fashion).\n"
+    " --zrest					Enable zrest authentication. This enables the TURN REST API, but uses\n"
+    "						a different format and algorithm for username and passwords handling.\n"
     " --no-auth-pings				Disable periodic health checks to 'dynamic' auth secret tables.\n"
     " --no-dynamic-ip-list				Do not use dynamic allowed/denied peer ip list.\n"
     " --no-dynamic-realms				Do not use dynamic realm assignment and options.\n"
@@ -1363,6 +1397,12 @@ static char Usage[] =
     "packets.\n"
     " --drop-invalid-packets-log			   Log invalid packets. The default behaviour is to not log "
     "invalid packets.\n"
+    " --401-req-limit=<request>\t\t\tSet the maximum number of 401 Unauthorized responses allowed\n"
+    "						per rate-limiting window. If set to 0 disables rate limiting. Default is 1000.\n"
+    " --401-window=<seconds>\t\t\t\tSet the time window duration in seconds for rate limiting 401 Unauthorized responses.\n"
+    "						Default is 120.\n"
+    " --401-allowlist=<filename>\t\t\tSet the path of the allow-list, one IP per line allowed to bypass the 401\n"
+    "						rate-limit settings. Default is none.\n"
     " --version					Print version (and exit).\n"
     " -h						Help\n"
     "\n";
@@ -1524,8 +1564,19 @@ enum EXTRA_OPTS {
   RESPOND_HTTP_UNSUPPORTED_OPT,
   DROP_INVALID_PACKETS_OPT,
   DROP_INVALID_PACKETS_LOG_OPT,
+  CPUS_OPT,
   VERSION_OPT,
-  CPUS_OPT
+  ZREST_AUTH_OPT,
+  FEDERATION_LISTENING_IP_OPT,
+  FEDERATION_LISTENING_PORT_OPT,
+  FEDERATION_NO_DTLS_OPT,
+  FEDERATION_CERT_OPT,
+  FEDERATION_PKEY_OPT,
+  FEDERATION_PKEY_PWD_OPT,
+  FEDERATION_REMOTE_WHITELIST_OPT,
+  RATELIMIT_REQUESTS_OPT,
+  RATELIMIT_WINDOW_OPT,
+  RATELIMIT_ALLOWLIST_OPT
 };
 
 struct myoption {
@@ -1554,6 +1605,13 @@ static const struct myoption long_options[] = {
     {"relay-device", required_argument, NULL, 'i'},
     {"relay-ip", required_argument, NULL, 'E'},
     {"external-ip", required_argument, NULL, 'X'},
+    {"federation-listening-ip", required_argument, NULL, FEDERATION_LISTENING_IP_OPT },
+    {"federation-listening-port", required_argument, NULL, FEDERATION_LISTENING_PORT_OPT },
+    {"federation-no-dtls", required_argument, NULL, FEDERATION_NO_DTLS_OPT },
+    {"federation-cert", required_argument, NULL, FEDERATION_CERT_OPT },
+    {"federation-pkey", required_argument, NULL, FEDERATION_PKEY_OPT },
+    {"federation-pkey-pwd", required_argument, NULL, FEDERATION_PKEY_PWD_OPT },
+    {"federation-remote-whitelist", required_argument, NULL, FEDERATION_REMOTE_WHITELIST_OPT },
     {"relay-threads", required_argument, NULL, 'm'},
     {"min-port", required_argument, NULL, MIN_PORT_OPT},
     {"max-port", required_argument, NULL, MAX_PORT_OPT},
@@ -1586,6 +1644,7 @@ static const struct myoption long_options[] = {
 #endif
     {"use-auth-secret", optional_argument, NULL, AUTH_SECRET_OPT},
     {"static-auth-secret", required_argument, NULL, STATIC_AUTH_SECRET_VAL_OPT},
+    {"zrest", optional_argument, NULL, ZREST_AUTH_OPT},
     {"no-auth-pings", optional_argument, NULL, NO_AUTH_PINGS_OPT},
     {"no-dynamic-ip-list", optional_argument, NULL, NO_DYNAMIC_IP_LIST_OPT},
     {"no-dynamic-realms", optional_argument, NULL, NO_DYNAMIC_REALMS_OPT},
@@ -1675,6 +1734,9 @@ static const struct myoption long_options[] = {
     {"version", optional_argument, NULL, VERSION_OPT},
     {"syslog-facility", required_argument, NULL, SYSLOG_FACILITY_OPT},
     {"cpus", required_argument, NULL, CPUS_OPT},
+    {"401-req-limit", optional_argument, NULL, RATELIMIT_REQUESTS_OPT},
+    {"401-window", optional_argument, NULL, RATELIMIT_WINDOW_OPT},
+    {"401-allowlist", optional_argument, NULL, RATELIMIT_ALLOWLIST_OPT},
     {NULL, no_argument, NULL, 0}};
 
 static const struct myoption admin_long_options[] = {
@@ -2239,7 +2301,10 @@ static void set_option(int c, char *value) {
     turn_params.prometheus = true;
     break;
   case PROMETHEUS_PORT_OPT:
-    turn_params.prometheus_port = atoi(value);
+#if !defined(TURN_NO_PROMETHEUS)
+    prometheus_port = atoi(value);
+    turn_params.prometheus = turn_params.prometheus == PROM_DISABLED ? PROM_ENABLED : turn_params.prometheus;
+#endif
     break;
   case PROMETHEUS_ADDRESS_OPT:
     STRCPY(turn_params.prometheus_address, value);
@@ -2416,7 +2481,67 @@ static void set_option(int c, char *value) {
       turn_params.cpus_configured = true;
     }
   } break;
-
+  case ZREST_AUTH_OPT:
+    turn_params.use_zrest_auth_secret = 1;
+    use_tltc = 1;
+    turn_params.ct = TURN_CREDENTIALS_LONG_TERM;
+    use_lt_credentials = 1;
+    break;
+  case FEDERATION_LISTENING_IP_OPT:
+    if(turn_params.federation_listening_ip) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "You cannot define federation listen IP more than once in the configuration\n");
+    } else {
+      turn_params.federation_listening_ip = (ioa_addr*)allocate_super_memory_engine(turn_params.listener.ioa_eng, sizeof(ioa_addr));
+      if(make_ioa_addr((const uint8_t*)value,0,turn_params.federation_listening_ip)<0) {
+        TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,"federation_listening_ip : Wrong address format: %s\n",value);
+        free(turn_params.federation_listening_ip);
+        turn_params.federation_listening_ip = NULL;
+      }
+    }
+    break;
+  case FEDERATION_LISTENING_PORT_OPT:
+    turn_params.federation_listening_port = atoi(value);
+    break;
+  case FEDERATION_NO_DTLS_OPT:
+    turn_params.federation_no_dtls = get_bool_value(value);
+    break;
+  case FEDERATION_CERT_OPT:
+    STRCPY(turn_params.federation_cert_file,value);
+    break;
+  case FEDERATION_PKEY_OPT:
+    STRCPY(turn_params.federation_pkey_file,value);
+    break;
+  case FEDERATION_PKEY_PWD_OPT:
+    STRCPY(turn_params.federation_pkey_pwd,value);
+    break;
+  case FEDERATION_REMOTE_WHITELIST_OPT:
+    if(value) {
+      char *div = strchr(value,',');
+      if(div) {
+        char *hostname=strdup(value);
+        div = strchr(hostname,',');
+        div[0]=0;
+        ++div;  // div now points to issuer
+        federation_whitelist_add(hostname, div);
+        free(hostname);
+      } else {
+        // No Issuer
+        federation_whitelist_add(value, "");
+      }
+    }
+    break;
+  case RATELIMIT_REQUESTS_OPT:
+    turn_params.ratelimit_401_requests_per_window = get_int_value(value, RATELIMIT_DEFAULT_MAX_REQUESTS_PER_WINDOW);
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Setting 401 ratelimit requests per window to: %i\n", turn_params.ratelimit_401_requests_per_window);
+    break;
+  case RATELIMIT_WINDOW_OPT:
+    turn_params.ratelimit_401_window_seconds = get_int_value(value, RATELIMIT_DEFAULT_WINDOW_SECS);
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Setting 401 ratelimit window to: %i seconds\n", turn_params.ratelimit_401_window_seconds);
+    break;
+  case RATELIMIT_ALLOWLIST_OPT:
+    STRCPY(turn_params.ratelimit_401_allowlist, value);
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Setting 401 ratelimit allow list to: %s\n", turn_params.ratelimit_401_allowlist);
+    break;
   /* these options have been already taken care of before: */
   case 'l':
   case NO_STDOUT_LOG_OPT:
@@ -3247,6 +3372,10 @@ int main(int argc, char **argv) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "CONFIG: WARNING: web-admin support not compatible with --no-tls option.\n");
     use_web_admin = 0;
   }
+  if(turn_params.use_zrest_auth_secret) {
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "\nCONFIG: you have specified zrest-based authentication; disabling TURN REST API authentication.\n");
+    turn_params.use_auth_secret_with_timestamp = 0;
+  }
 
   openssl_setup();
 
@@ -3381,6 +3510,12 @@ int main(int argc, char **argv) {
 
   setup_server();
 
+  /* Init allow list if configured */
+  if (turn_params.ratelimit_401_allowlist != NULL) {
+    ratelimit_init_allowlist_map();
+    ratelimit_update_allowlist(turn_params.ratelimit_401_allowlist);
+  }
+
 #if defined(WINDOWS)
   // TODO: implement it!!! add windows server
 #else
@@ -3392,6 +3527,8 @@ int main(int argc, char **argv) {
   ev = evsignal_new(turn_params.listener.event_base, SIGINT, shutdown_handler, NULL);
   event_add(ev, NULL);
   ev = evsignal_new(turn_params.listener.event_base, SIGUSR1, drain_handler, NULL);
+  event_add(ev, NULL);
+  ev = evsignal_new(turn_params.listener.event_base, SIGRTMIN+3, ratelimit_update_allowlist_handler, NULL);
   event_add(ev, NULL);
 #endif
 
@@ -3631,13 +3768,13 @@ static void set_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *metho
   SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
   SSL_CTX_set_ciphersuites(ctx, turn_params.cipher_list);
 
-  if (!SSL_CTX_use_certificate_chain_file(ctx, turn_params.cert_file)) {
+  if (!SSL_CTX_use_certificate_chain_file(ctx, cert_file)) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: ERROR: no certificate found\n", protocol);
     err = 1;
   }
 
-  if (!SSL_CTX_use_PrivateKey_file(ctx, turn_params.pkey_file, SSL_FILETYPE_PEM)) {
-    if (!SSL_CTX_use_RSAPrivateKey_file(ctx, turn_params.pkey_file, SSL_FILETYPE_PEM)) {
+  if (!SSL_CTX_use_PrivateKey_file(ctx, pkey_file, SSL_FILETYPE_PEM)) {
+    if (!SSL_CTX_use_RSAPrivateKey_file(ctx, pkey_file, SSL_FILETYPE_PEM)) {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,
                     "%s: ERROR: no valid private key found, or invalid private key password provided\n", protocol);
       err = 1;
@@ -3892,6 +4029,7 @@ static void openssl_load_certificates(void) {
 static void reload_ssl_certs(evutil_socket_t sock, short events, void *args) {
   TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Reloading TLS certificates and keys\n");
   openssl_load_certificates();
+  federation_load_certificates();
   if (turn_params.tls_ctx_update_ev != NULL) {
     event_active(turn_params.tls_ctx_update_ev, EV_READ, 0);
   }
@@ -3943,4 +4081,11 @@ void decrement_global_allocation_count(void) {
   }
 }
 
+static void ratelimit_update_allowlist_handler(evutil_socket_t sock, short events, void *args) {
+  TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Reloading 401 ratelimit allowlist signal %d\n", sock);
+  ratelimit_update_allowlist(turn_params.ratelimit_401_allowlist);
+
+  UNUSED_ARG(events);
+  UNUSED_ARG(args);
+}
 ///////////////////////////////

@@ -30,11 +30,11 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests \
             libmicrohttpd-dev
 
 # Prepare prometheus-client-c sources for building.
-ARG prom_ver=0.1.3
+ARG prom_commit=66deada5dc9b005ffd1bb509ff08b2d1d722356c
 RUN mkdir -p /build/ && cd /build/ \
  && git init \
- && git remote add origin https://github.com/digitalocean/prometheus-client-c \
- && git fetch --depth=1 origin "v${prom_ver}" \
+ && git remote add origin https://github.com/wireapp/prometheus-client-c \
+ && git fetch --depth=1 origin "${prom_commit}" \
  && git checkout FETCH_HEAD
 
 # Build libprom.so from sources.
@@ -105,7 +105,7 @@ WORKDIR /app/
 # Use Coturn sources from Git if `coturn_git_ref` is specified.
 ARG coturn_git_ref=HEAD
 ARG coturn_github_url=https://github.com
-ARG coturn_github_repo=coturn/coturn
+ARG coturn_github_repo=wireapp/coturn
 
 RUN if [ "${coturn_git_ref}" != 'HEAD' ]; then true \
  && rm -rf /app/* \
@@ -177,6 +177,9 @@ RUN apt-get update \
  # Install `dig` tool for `detect-external-ip.sh`.
  && apt-get install -y --no-install-recommends --no-install-suggests \
             dnsutils \
+ # Install `dumb-init` to handle signaling (which we use for drain mode) correctly.
+ && apt-get install -y --no-install-recommends --no-install-suggests \
+            dumb-init \
  # Cleanup unnecessary stuff.
  && rm -rf /var/lib/apt/lists/*
 

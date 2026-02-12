@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -49,6 +50,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#ifndef _MSC_VER
+#include <stdatomic.h>
+extern _Atomic
+#else
+extern volatile
+#endif
+    size_t global_allocation_count;
 
 //////////// REALM //////////////
 
@@ -178,6 +187,7 @@ void clean_secrets_list(secrets_list_t *sl);
 size_t get_secrets_list_size(secrets_list_t *sl);
 const char *get_secrets_list_elem(secrets_list_t *sl, size_t i);
 void add_to_secrets_list(secrets_list_t *sl, const char *elem);
+void init_zrest_regex(void);
 
 /////////// USER DB CHECK //////////////////
 

@@ -1,0 +1,178 @@
+# The amount of coturn instances to run.  NOTE: Only one coturn can run per node due
+# to `hostNetwork`. If this number is higher than the amount of nodes that can
+# be used for scheduling (Also see `nodeSelector`) pods will remain in a
+# pending state untill you add more capacity.
+replicaCount: 1
+
+image:
+  repository: quay.io/wire/coturn
+  pullPolicy: IfNotPresent
+  # overwrite the tag here, otherwise `appVersion` of the chart will be used
+  tag: ""
+
+# If you have multiple deployments of coturn running in one cluster, it is
+# important that they run on disjoint sets of nodes, you can use nodeSelector to enforce this
+nodeSelector: {}
+
+# Limiting memory usage to ~90% of the available memory on a 8Gb node which is used for coturn pods by default.
+# This is to prevent the pod from being OOM kill
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 6.5Gi
+
+initResources:
+  requests:
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podSecurityContext:
+  fsGroup: 31338
+
+securityContext:
+  # Pick a high number that is unlikely to conflict with the host
+  # https://kubesec.io/basics/containers-securitycontext-runasuser/
+  runAsUser: 31338
+
+coturnTurnListenPort: 3478
+coturnMetricsListenPort: 9641
+coturnTurnTlsListenPort: 5349
+
+# coturnTurnListenIP: "1.2.3.4" # can also be __COTURN_EXT_IP__, __COTURN_POD_IP__,__COTURN_HOST_IP__
+coturnTurnExternalIP: null
+# coturnTurnRelayIP:
+# coturnPrometheusIP:
+# coturnFederationListeningIP:
+
+tls:
+  enabled: false
+  # compliant with BSI TR-02102-2
+  ciphers: 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384'
+  secretRef:
+  reloaderImage:
+    # container image containing https://github.com/Pluies/config-reloader-sidecar
+    # for handling runtime certificate reloads.
+    repository: quay.io/wire/config-reloader-sidecar
+    pullPolicy: IfNotPresent
+    tag: 72c3c8434660bd157d42012b0bcd67f338fc5c7a
+
+# CA certificate bundle configuration
+# Controls certificate authority validation for coturn
+ca:
+  # When disabled: Uses system CA bundle at /etc/ssl/certs/ca-certificates.crt (default behavior)
+  # When enabled with secretRef OR cert: Uses custom CA bundle
+  # When enabled without secretRef or cert: Disables CA validation entirely (not recommended for production)
+  enabled: false
+
+  # Option 1: Reference to an existing Kubernetes Secret containing the CA bundle
+  # The secret must contain a key (default: ca-certificates.crt) with the CA bundle in PEM format
+  #
+  # Example: Create a secret with your CA bundle:
+  #   kubectl create secret generic my-ca-bundle --from-file=ca-certificates.crt=/path/to/bundle.pem
+  #
+  # Then reference it here:
+  #   secretRef: my-ca-bundle
+  #   secretKey: ca-certificates.crt
+  secretRef:
+
+  # The key within the secret that contains the CA bundle (default: ca-certificates.crt)
+  # Only used when secretRef is set
+  secretKey: ca-certificates.crt
+
+  # Option 2: Inline CA certificate bundle (PEM format)
+  # Mutually exclusive with secretRef - use one or the other, not both
+  #
+  # Example:
+  #   cert: |
+  #     -----BEGIN CERTIFICATE-----
+  #     MIIDXTCCAkWgAwIBAgIJAKJ...
+  #     -----END CERTIFICATE-----
+  cert:
+
+config:
+  verboseLogging: false
+
+federate:
+  enabled: false
+  port: 9191
+
+  dtls:
+    enabled: false
+
+    tls:
+  #   Example:
+  #
+  #   tls:
+  #     key: "-----BEGIN EC PRIVATE KEY----- ..." # (ascii blob) private key
+  #     crt: "-----BEGIN CERTIFICATE----- ..." # (ascii blob) certificate
+  #     privateKeyPassword: "XXX" # optional, used when the key is password protected
+  #
+  #   OR (mutually exclusive)
+  #
+  #   tls:
+  #      issuerRef:
+  #        name: letsencrypt-http01
+  #
+  #        # We can reference ClusterIssuers by changing the kind here.
+  #        # The default value is Issuer (i.e. a locally namespaced Issuer)
+  #        # kind: Issuer
+  #        kind: Issuer
+  #
+  #        # This is optional since cert-manager will default to this value however
+  #        # if you are using an external issuer, change this to that issuer group.
+  #        group: cert-manager.io
+  #
+  #      # optional labels to attach to the cert-manager Certificate
+  #      certificate:
+  #        labels: ..
+
+  # # list of host/ip/cert common names / subject alt names, and optional issuer
+  # # names to accept DTLS connections from. There can be multiple entries.
+  # remoteWhitelist:
+  #   - host: wire.example
+  #     issuer: Issuer Common Name
+  #   - host: another.wire.example
+  #     issuer: "DigiCert SHA2 Extended Validation Server CA"
+  #   - host: another-host-without-issuer.wire.example
+    remoteWhitelist: []
+
+ratelimit:
+  override: false
+  # # Set the maximum number of 401 Unauthorized responses allowed per rate-limiting window. Defaults is 1000.
+  # requestLimit: 1000
+  # # Set the time window duration in seconds for rate limiting 401 Unauthorized responses. Defaults is 120.
+  # window: 120
+  # # Define the IPs allowed to bypass the 401 rate-limiting
+  # allowlist: 
+  #   - "192.168.1.1"
+  #   - "192.168.1.2"
+
+metrics:
+  serviceMonitor:
+    enabled: false
+
+# This chart supports waiting for traffic to drain from coturn
+# before pods are actually terminated. Once in 'drain' mode, no new connections
+# are accepted, but old ones are kept alive.
+# If you have 2 or more replicas, it's recommended to set this to true,
+# and if you only have one coturn replica you may want this to be false, as
+# otherwise while the pod restarts, no new calls can be established.
+coturnGracefulTermination: false
+# Grace period for terminating coturn pods, after which they will be forcibly
+# terminated. This setting is only effective when coturnGracefulTermination is
+# set to true.
+coturnGracePeriodSeconds: 43200 # 12 hours
+
+livenessProbe:
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+readinessProbe:
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+service:
+  # Kubernetes annotations to be set at the Service
+  annotations: {}

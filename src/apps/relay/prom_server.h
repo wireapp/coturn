@@ -46,6 +46,10 @@
 #define DEFAULT_PROM_SERVER_PORT (9641)
 #define TURN_ALLOC_STR_MAX_SIZE (20)
 
+#define PROM_DISABLED		0
+#define PROM_ENABLED		1
+#define PROM_ENABLED_WITH_IP	2
+
 #if !defined(TURN_NO_PROMETHEUS)
 
 #ifdef __cplusplus

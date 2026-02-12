@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -2224,6 +2225,7 @@ static void write_pc_page(ioa_socket_handle s) {
             https_print_uint(sb, turn_params.rest_api_separator, "TURN REST API separator ASCII number", 0);
           }
         }
+        https_print_flag(sb,turn_params.use_zrest_auth_secret,"TURN zrest authentication support",0);
 
         https_print_empty_row(sb, 2);
 

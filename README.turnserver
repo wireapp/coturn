@@ -201,6 +201,14 @@ Flags:
 			The actual value of the secret is defined either by option static-auth-secret,
 			or can be found in the turn_secret table in the database.
 
+--zrest 		Use the zrest authentication scheme. This scheme is almost the
+			same as the TURN REST API, except it uses a different username
+			format and password derivation algorithm. This flag enables
+			the TURN REST API, as with --use-auth-secret, and uses the
+			same secrets, either given in the configuration file or in the
+			database, but uses the zrest-specific username and password
+			handling.
+
 --oauth			Support oAuth authentication, as in the third-party STUN/TURN RFC 7635.
 
 --dh566			Use 566 bits predefined DH TLS key. Default size of the key is 2066.
@@ -297,8 +305,6 @@ Flags:
 		metrics with client usernames. Labeling with client usernames is
 		disabled by default, because this may cause memory leaks when using
 		authentication with ephemeral usernames (e.g. TURN REST API).
-
---prometheus-port	Prometheus listener port (Default: 9641).
 
 -h			Help.
 
@@ -401,6 +407,45 @@ Options with values:
 			correctly, if the addresses are mapped properly, even when the TURN server itself
 			is behind A NAT.
 			By default, this value is empty, and no address mapping is used.
+
+--federation-listening-ip	Federation allows clients of different coturn instances to tunnel
+			data between each other on a single federated connection between two coturn instances.
+			The federated link can either use UDP or DTLS. MTLS authentication is used for DTLS
+			federated connections. See the federation-remote-whitelist configuration option.
+			To use the federation feature, a TURN client creates an allocation using a username
+			that starts with the token "sft-". This special allocation creates a federation
+			channel number that is used by a remote coturn instance to send data to this client.
+			The federation channel number or channel id (cid) is returned in the TURN allocation
+			response as a ChannelNum attribute. The federation ip address and port is returned
+			in the TURN allocation response RelayAddress attribute. A client of a remote cotrun
+			instance creates a federated allocation in the same manner, and uses a Send Indication
+			with the correct channel number from the other coturn instance, to send to the other
+			coturn instance over the federated tunnel. This data is then forwarded to the client
+			of the other coturn instance as a Data Indication.
+			To enable federation set both federation-listening-ip and federation-listening-port.
+
+--federation-listening-port	The UDP/DTLS port to bind to for federated traffic.
+
+--federation-no-dtls	If true, then unencrypted UDP is used to tunnel data on the
+			federated link. If false (default) then DTLS is used and you are required to
+			configure the additional federation certificate settings.
+
+--federation-cert	If federation-no-dtls is false, then you must configure a certificate file. 
+			Use an absolute path or path relative to the configuration file.
+			Use PEM file format.
+
+--federation-pkey	If federation-no-dtls is false, then you must configure a private key file.
+			Use an absolute path or path relative to the configuration file.
+			Use PEM file format.
+
+--federation-pkey-pwd	Federation private key file password, if it is in encrypted format.
+
+--federation-remote-whitelist	If federation-no-dtls is false, then you must configure
+			a whitelist for DTLS mutual authenication (MTLS) connection verification.
+			This setting can be repeated multiple times to form a list of pairs.  Each pair
+			defines a hostname/domain name and an optional issuer name to validate. All
+			certificatesin the chain are checked for an issuer match.
+			Setting format:  <hostname>[,<issuer>]
 
 -m, --relay-threads	Number of the relay threads to handle the established connections
 			(in addition to authentication thread and the listener thread).
@@ -605,6 +650,10 @@ Options with values:
 			The standard RFC explicitly define that this default must be IPv4, 
 			so use other option values with care!
 
+--prometheus-ip		IP address to bind the Prometheus listener to. Default is the wildcard address.
+
+--prometheus-port	Port to bind the Prometheus listener to. Default is 9641.
+
 --cli-ip		Local system IP address to be used for CLI management interface.
 			The turnserver process can be accessed for management with telnet,
 			at this IP address and on the CLI port (see the next parameter).
@@ -639,6 +688,12 @@ Options with values:
                     Strongly encouraged to use this option to decrease gain factor in STUN binding responses.
 --stun-backward-compatibility		Enable handling old STUN Binding requests using MAPPED-ADDRESS attribute in binding response (instead of XOR-MAPPED-ADDRESS).
 
+--401-req-limit=<request>   Set the maximum number of 401 Unauthorized responses allowed per rate-limiting window.
+                            Defaults is 1000.
+--401-window=<seconds>      Set the time window duration in seconds for rate limiting 401 Unauthorized responses.
+                            Defaults is 120.
+--401-allowlist=<filename>  Set the path of the allow-list, one IP per line allowed to bypass the 401 rate-limit settings.
+                            Default is none.
 
 ==================================
 

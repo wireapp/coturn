@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -35,6 +36,7 @@
 #ifndef __TURN_SERVER__
 #define __TURN_SERVER__
 
+#include <stdbool.h>
 #include "ns_turn_session.h"
 #include "ns_turn_utils.h"
 
@@ -71,7 +73,14 @@ extern int TURN_MAX_ALLOCATE_TIMEOUT_STUN_ONLY;
 
 typedef uint8_t turnserver_id;
 
-enum _MESSAGE_TO_RELAY_TYPE { RMT_UNKNOWN = 0, RMT_SOCKET, RMT_CB_SOCKET, RMT_MOBILE_SOCKET, RMT_CANCEL_SESSION };
+enum _MESSAGE_TO_RELAY_TYPE {
+  RMT_UNKNOWN = 0,
+  RMT_SOCKET,
+  RMT_CB_SOCKET,
+  RMT_MOBILE_SOCKET,
+  RMT_CANCEL_SESSION,
+  RMT_FEDERATION_SEND
+};
 typedef enum _MESSAGE_TO_RELAY_TYPE MESSAGE_TO_RELAY_TYPE;
 
 ///////// ALLOCATION DEFAULT ADDRESS FAMILY TYPES /////////////////////
@@ -203,6 +212,14 @@ struct _turn_turnserver {
 
   /* Set to true on SIGUSR1 */
   bool is_draining;
+
+  /* Federation params */
+  ioa_addr federation_addr;
+  void **federation_service;
+
+  vintp ratelimit_401_requests_per_window;
+  vintp ratelimit_401_window_seconds;
+  const char *ratelimit_401_allowlist;
 };
 
 const char *get_version(turn_turnserver *server);
@@ -225,6 +242,8 @@ void init_turn_server(turn_turnserver *server, turnserver_id id, int verbose, io
                       int sock_buf_size, allocate_bps_cb allocate_bps_func, int oauth, const char *oauth_server_name,
                       const char *acme_redirect, ALLOCATION_DEFAULT_ADDRESS_FAMILY allocation_default_address_family,
                       bool *log_binding, bool *stun_backward_compatibility, bool *respond_http_unsupported);
+                      int *ratelimit_401_requests_per_window, int *ratelimit_401_window_seconds,
+                      const char *ratelimit_401_allowlist);
 
 ioa_engine_handle turn_server_get_engine(turn_turnserver *s);
 
@@ -247,6 +266,7 @@ int report_turn_session_info(turn_turnserver *server, ts_ur_super_session *ss, i
 turn_time_t get_turn_server_time(turn_turnserver *server);
 
 void turn_cancel_session(turn_turnserver *server, turnsession_id sid);
+void turn_send_federation_data(turn_turnserver *server, turnsession_id sid, ioa_network_buffer_handle nbh, int ttl, int tos);
 
 ///////////////////////////////////////////
 
