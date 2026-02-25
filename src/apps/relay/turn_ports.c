@@ -219,6 +219,7 @@ void turnports_release(turnports *tp, uint16_t port) {
 }
 
 int turnports_allocate_even(turnports *tp, int allocate_rtcp, uint64_t *reservation_token) {
+  (void)allocate_rtcp;
   if (tp) {
     TURN_MUTEX_LOCK(&tp->mutex);
     const uint16_t size = turnports_size(tp);
@@ -251,8 +252,6 @@ int turnports_allocate_even(turnports *tp, int allocate_rtcp, uint64_t *reservat
       }
     }
   }
-
-  TURN_MUTEX_UNLOCK(&tp->mutex);
 
   return -1;
 }

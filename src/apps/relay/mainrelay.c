@@ -255,12 +255,12 @@ turn_params_t turn_params = {
     false, /* stun_backward_compatibility */
     false, /* respond_http_unsupported */
     true,  /* drop_invalid_packets */
-    false  /* drop_invalid_packets_log */
+    false, /* drop_invalid_packets_log */
 
     ///////// Ratelimt /////////
     RATELIMIT_DEFAULT_MAX_REQUESTS_PER_WINDOW, /* 401-req-limit */
     RATELIMIT_DEFAULT_WINDOW_SECS,             /* 401-window */
-    NULL                                       /* 401-allowlist */
+    ""                                       /* 401-allowlist */
 };
 
 //////////////// OpenSSL Init //////////////////////
@@ -293,7 +293,9 @@ static void reload_ssl_certs(evutil_socket_t sock, short events, void *args);
 
 static void shutdown_handler(evutil_socket_t sock, short events, void *args);
 static void drain_handler(evutil_socket_t sock, short events, void *args);
+#ifdef SIGRTMIN
 static void ratelimit_update_allowlist_handler(evutil_socket_t sock, short events, void *args);
+#endif
 
 //////////////////////////////////////////////////
 
@@ -3511,7 +3513,7 @@ int main(int argc, char **argv) {
   setup_server();
 
   /* Init allow list if configured */
-  if (turn_params.ratelimit_401_allowlist != NULL) {
+  if (*turn_params.ratelimit_401_allowlist != '\0') {
     ratelimit_init_allowlist_map();
     ratelimit_update_allowlist(turn_params.ratelimit_401_allowlist);
   }
@@ -3528,8 +3530,10 @@ int main(int argc, char **argv) {
   event_add(ev, NULL);
   ev = evsignal_new(turn_params.listener.event_base, SIGUSR1, drain_handler, NULL);
   event_add(ev, NULL);
+#ifdef SIGRTMIN
   ev = evsignal_new(turn_params.listener.event_base, SIGRTMIN+3, ratelimit_update_allowlist_handler, NULL);
   event_add(ev, NULL);
+#endif
 #endif
 
   drop_privileges();
@@ -3747,7 +3751,7 @@ static int ServerALPNCallback(SSL *ssl, const unsigned char **out, unsigned char
   return SSL_TLSEXT_ERR_NOACK; //???
 }
 
-static void set_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *method) {
+void set_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *method) {
   SSL_CTX *ctx = SSL_CTX_new(method);
   int err = 0;
   int rc = 0;
@@ -3768,13 +3772,13 @@ static void set_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *metho
   SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
   SSL_CTX_set_ciphersuites(ctx, turn_params.cipher_list);
 
-  if (!SSL_CTX_use_certificate_chain_file(ctx, cert_file)) {
+  if (!SSL_CTX_use_certificate_chain_file(ctx, turn_params.cert_file)) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: ERROR: no certificate found\n", protocol);
     err = 1;
   }
 
-  if (!SSL_CTX_use_PrivateKey_file(ctx, pkey_file, SSL_FILETYPE_PEM)) {
-    if (!SSL_CTX_use_RSAPrivateKey_file(ctx, pkey_file, SSL_FILETYPE_PEM)) {
+  if (!SSL_CTX_use_PrivateKey_file(ctx, turn_params.pkey_file, SSL_FILETYPE_PEM)) {
+    if (!SSL_CTX_use_RSAPrivateKey_file(ctx, turn_params.pkey_file, SSL_FILETYPE_PEM)) {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,
                     "%s: ERROR: no valid private key found, or invalid private key password provided\n", protocol);
       err = 1;
@@ -4081,6 +4085,7 @@ void decrement_global_allocation_count(void) {
   }
 }
 
+#ifdef SIGRTMIN
 static void ratelimit_update_allowlist_handler(evutil_socket_t sock, short events, void *args) {
   TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Reloading 401 ratelimit allowlist signal %d\n", sock);
   ratelimit_update_allowlist(turn_params.ratelimit_401_allowlist);
@@ -4088,4 +4093,5 @@ static void ratelimit_update_allowlist_handler(evutil_socket_t sock, short event
   UNUSED_ARG(events);
   UNUSED_ARG(args);
 }
+#endif
 ///////////////////////////////

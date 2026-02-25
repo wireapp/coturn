@@ -85,12 +85,6 @@ static TURN_MUTEX_DECLARE(o_to_realm_mutex);
 static ur_string_map *o_to_realm = NULL;
 static secrets_list_t realms_list;
 
-#ifndef _MSC_VER
-_Atomic
-#else
-volatile
-#endif
-    size_t global_allocation_count = 0; // used for drain mode, to know when all allocations have gone away
 
 static char userdb_type_unknown[] = "Unknown";
 static char userdb_type_sqlite[] = "SQLite";
@@ -487,7 +481,7 @@ regout:
   return ret;
 }
 
-void init_zrest_regex() {
+void init_zrest_regex(void) {
   if(regcomp(&zrest_username_regex, ZREST_USERNAME_REGEX, REG_EXTENDED)!=0) {
     fputs("regcomp: could not compile zrest username regex\n", stderr);
     exit(-1);

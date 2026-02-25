@@ -241,7 +241,7 @@ void init_turn_server(turn_turnserver *server, turnserver_id id, int verbose, io
                       send_turn_session_info_cb send_turn_session_info, send_https_socket_cb send_https_socket,
                       int sock_buf_size, allocate_bps_cb allocate_bps_func, int oauth, const char *oauth_server_name,
                       const char *acme_redirect, ALLOCATION_DEFAULT_ADDRESS_FAMILY allocation_default_address_family,
-                      bool *log_binding, bool *stun_backward_compatibility, bool *respond_http_unsupported);
+                      bool *log_binding, bool *stun_backward_compatibility, bool *respond_http_unsupported,
                       int *ratelimit_401_requests_per_window, int *ratelimit_401_window_seconds,
                       const char *ratelimit_401_allowlist);
 

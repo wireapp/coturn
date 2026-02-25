@@ -44,7 +44,7 @@ int ratelimit_window_secs = RATELIMIT_DEFAULT_WINDOW_SECS;
 TURN_MUTEX_DECLARE(rate_limit_main_mutex);
 TURN_MUTEX_DECLARE(rate_limit_allowlist_mutex);
 
-void ratelimit_remove_newlines(char *str) {
+static void ratelimit_remove_newlines(char *str) {
   char *src = str;
   char *dst = str;
 
@@ -57,7 +57,7 @@ void ratelimit_remove_newlines(char *str) {
   *dst = '\0';
 }
 
-void ratelimit_init_allowlist_map() {
+void ratelimit_init_allowlist_map(void) {
   TURN_MUTEX_INIT(&rate_limit_allowlist_mutex);
   TURN_MUTEX_LOCK(&rate_limit_allowlist_mutex);
 
@@ -81,7 +81,7 @@ void ratelimit_update_allowlist(const char *allowlist) {
     TURN_MUTEX_UNLOCK(&rate_limit_allowlist_mutex);
     /* loop over file and add entries */
     while (fgets(line, sizeof(line) - 1, file) != NULL) {
-      if (!line) {
+      if (*line == '\0') {
         break;
       }
 
@@ -104,7 +104,7 @@ void ratelimit_update_allowlist(const char *allowlist) {
   }
 }
 
-int ratelimit_is_on_allowlist(const char *allowlist, ioa_addr *addr) {
+static int ratelimit_is_on_allowlist(const char *allowlist, ioa_addr *addr) {
   /* If no allowlist provided, return early */
   if (!allowlist) {
     return 0;
@@ -138,7 +138,7 @@ int ratelimit_delete_expired(ur_map_value_type value) {
   return (rateLimitEntry->last_request_time + RATELIMIT_DEFAULT_WINDOW_SECS < current_time);
 }
 
-void ratelimit_init_map() {
+static void ratelimit_init_map(void) {
   TURN_MUTEX_INIT(&rate_limit_main_mutex);
   TURN_MUTEX_LOCK(&rate_limit_main_mutex);
 
@@ -175,13 +175,13 @@ int ratelimit_is_address_limited(ioa_addr *address, int max_requests, int window
     ratelimit_entry *rateLimitEntry = (ratelimit_entry *)(void *)(ur_map_value_type)ratelimit_ptr;
     TURN_MUTEX_LOCK(&(rateLimitEntry->mutex));
 
-    if (turn_time_before(current_time, rateLimitEntry->last_request_time)) {
+    if (turn_time_before((rateLimitEntry->last_request_time + window_secs), current_time)) {
       /* Check if request is inside the ratelimit window; reset the count and request time */
       rateLimitEntry->request_count = 1;
       rateLimitEntry->last_request_time = current_time;
       retval = 0;
       goto end_ratelimit_entry;
-    } else if (rateLimitEntry->request_count < max_requests) {
+    } else if (rateLimitEntry->request_count < (uint32_t)max_requests) {
       /* Check if request count is below requests per window; increment the count */
       if (rateLimitEntry->request_count < UINT32_MAX)
         rateLimitEntry->request_count++;

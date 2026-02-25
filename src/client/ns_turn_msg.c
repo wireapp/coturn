@@ -1083,7 +1083,7 @@ bool stun_set_allocate_response_str(uint8_t *buf, size_t *len, stun_tid *tid, co
     }
 
     if(federation_cid) {
-       if(stun_attr_add_channel_number_str(buf, len, federation_cid) < 0) 
+       if(!stun_attr_add_channel_number_str(buf, len, federation_cid)) 
          return -1;
     }
 

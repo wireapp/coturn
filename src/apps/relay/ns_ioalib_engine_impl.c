@@ -269,6 +269,7 @@ static int buffer_list_empty(stun_buffer_list *bufs) {
   return 1;
 }
 
+#if 0
 static stun_buffer_list_elem *get_elem_from_buffer_list(stun_buffer_list *bufs) {
   stun_buffer_list_elem *ret = NULL;
 
@@ -289,6 +290,7 @@ static stun_buffer_list_elem *get_elem_from_buffer_list(stun_buffer_list *bufs) 
 
   return ret;
 }
+#endif
 
 static void pop_elem_from_buffer_list(stun_buffer_list *bufs) {
   if (bufs && bufs->head && bufs->tsz) {
@@ -307,6 +309,7 @@ static stun_buffer_list_elem *new_blist_elem(ioa_engine_handle e) {
   stun_buffer_list_elem *ret =
     (stun_buffer_list_elem *)malloc(sizeof(stun_buffer_list_elem));
 
+  (void)e;
 #if 0
   stun_buffer_list_elem *ret = get_elem_from_buffer_list(&(e->bufs));
 
@@ -355,6 +358,7 @@ static void add_buffer_to_buffer_list(stun_buffer_list *bufs, char *buf, size_t 
 }
 
 static void free_blist_elem(ioa_engine_handle e, stun_buffer_list_elem *buf_elem) {
+	(void)e;
   free(buf_elem);
 #if 0
   if (buf_elem) {
@@ -3337,13 +3341,10 @@ int send_data_from_ioa_socket_nbh(ioa_socket_handle s, ioa_addr *dest_addr, ioa_
               }
 #endif
             }
-          }
-        }
+	}
       }
     }
   }
-
-  ioa_network_buffer_delete(s->e, nbh);
 
   return ret;
 }

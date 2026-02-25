@@ -187,6 +187,7 @@ int federation_remove_connection(uint16_t connection_id) {
   return ret;
 }
 
+#if DTLSv1_2_SUPPORTED
 // returns -1 if not found, otherwise position in whitelist
 static int hostname_whitelist_match(char* cert_hostname) {
   // Look through all whitelist entries for a match
@@ -199,7 +200,9 @@ static int hostname_whitelist_match(char* cert_hostname) {
   }
   return -1;
 }
+#endif
 
+#if DTLSv1_2_SUPPORTED
 static int federation_cert_verify(X509_STORE_CTX *x509_ctx, void *arg) {
   UNUSED_ARG(arg);
 
@@ -319,6 +322,7 @@ static int federation_cert_verify(X509_STORE_CTX *x509_ctx, void *arg) {
   if(preverify_ok && postverify_ok && x509_ctx) return 1;
   return -1;
 }
+#endif
 
 #if ALPN_SUPPORTED
 static const unsigned char kALPNProtos[] = "\x08http/1.1\x09stun.turn\x12stun.nat-discovery";
@@ -382,6 +386,8 @@ static SSL_CTX* federation_setup_dtls_ctx(int isClient) {
   SSL_CTX_set_cookie_verify_cb(ssl_ctx, verify_cookie);  
 
 #else // DTLSv1_2_SUPPORTED
+  (void)isClient;
+  (void)cipherlist;
   TURN_LOG_FUNC(
       TURN_LOG_LEVEL_WARNING,
       "WARNING: TURN Server was compiled with rather old OpenSSL version, DTLS federation won't work correctly.\n");

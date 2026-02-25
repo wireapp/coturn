@@ -1721,9 +1721,9 @@ static void setup_relay_server(struct relay_server *rs, ioa_engine_handle e, int
                    send_turn_session_info, send_https_socket, turn_params.sock_buf_size, allocate_bps,
                    turn_params.oauth, turn_params.oauth_server_name, turn_params.acme_redirect,
                    turn_params.allocation_default_address_family, &turn_params.log_binding,
-                   &turn_params.stun_backward_compatibility, &turn_params.respond_http_unsupported);
+                   &turn_params.stun_backward_compatibility, &turn_params.respond_http_unsupported,
                    &turn_params.ratelimit_401_requests_per_window, &turn_params.ratelimit_401_window_seconds,
-                   &turn_params.ratelimit_401_allowlist);
+                   turn_params.ratelimit_401_allowlist);
 
 
   // Intentionally performed outside init_turn_server to help avoid future merge conflicts
@@ -1981,7 +1981,8 @@ void setup_server(void) {
       exit(-1);
 
     turn_params.listener.federation_service = (dtls_listener_relay_server_type*)allocate_super_memory_engine(turn_params.listener.federation_ioa_eng, sizeof(dtls_listener_relay_server_type*));
-    turn_params.listener.federation_service = create_dtls_federation_listener_server(turn_params.listener_ifname, slistenaddr, turn_params.federation_listening_port, turn_params.verbose,
+    turn_params.listener.federation_service = create_dtls_federation_listener_server(turn_params.listener_ifname, slistenaddr, turn_params.federation_listening_port,
+										     turn_params.sock_buf_size, turn_params.verbose,
                                                                                      turn_params.listener.federation_ioa_eng, NULL, 1 /* report_creation? */, NULL /* send_socket? */);
 
     if(turn_params.general_relay_servers_number > 1) {

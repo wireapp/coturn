@@ -72,20 +72,6 @@ _Thread_local uint32_t packetcounter = 0;
 static uint32_t packetcounter = 0;
 #endif
 
-struct dtls_listener_relay_server_info {
-  char ifname[1025];
-  ioa_addr addr;
-  ioa_engine_handle e;
-  turn_turnserver *ts;
-  int verbose;
-  struct event *udp_listen_ev;
-  ioa_socket_handle udp_listen_s;
-  ur_addr_map *children_ss; /* map of socket children on remote addr */
-  struct message_to_relay sm;
-  size_t slen0;
-  ioa_engine_new_connection_event_handler connect_cb;
-};
-
 ///////////// forward declarations ////////
 
 static int create_server_socket(dtls_listener_relay_server_type *server, int report_creation, int sock_buf_size);
@@ -157,7 +143,7 @@ static size_t print_packet_txt2pcap(uint64_t now, uint8_t *payload, size_t paylo
   index += snprintf((char *)(txt2pcap + index), txt2pcap_length - index, " 0000");
 
   for (size_t i = 0; i < payload_length; i++) {
-    int n = snprintf((char *)(txt2pcap + index), txt2pcap_length - index, " %02x", payload[i]);
+    size_t n = snprintf((char *)(txt2pcap + index), txt2pcap_length - index, " %02x", payload[i]);
     if (n < 0 || n >= txt2pcap_length - index) {
       break;
     }
@@ -181,7 +167,7 @@ static void calculate_cookie(SSL *ssl, unsigned char *cookie_secret, unsigned in
   }
 }
 
-static int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len) {
+int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len) {
   unsigned char *buffer;
   unsigned char result[EVP_MAX_MD_SIZE];
   unsigned int length = 0;
@@ -244,7 +230,7 @@ static int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie
   return 1;
 }
 
-static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int cookie_len) {
+int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int cookie_len) {
   unsigned int resultlength = 0;
   unsigned char result[COOKIE_SECRET_LENGTH];
 
@@ -936,7 +922,7 @@ static int create_server_socket(dtls_listener_relay_server_type *server, int rep
         addr_debug_print(server->verbose, &server->addr, "UDP federation listener opened on");
       else
         addr_debug_print(server->verbose, &server->addr, "DTLS federation listener opened on");
-    else if(!turn_params.no_udp && !turn_params.no_dtls)
+    else if(!turn_params.no_udp && !turn_params.no_dtls) {
       addr_debug_print(server->verbose, &server->addr, "DTLS/UDP listener opened on");
     } else if (!turn_params.no_dtls) {
       addr_debug_print(server->verbose, &server->addr, "DTLS listener opened on");
@@ -944,6 +930,7 @@ static int create_server_socket(dtls_listener_relay_server_type *server, int rep
       addr_debug_print(server->verbose, &server->addr, "UDP listener opened on");
     }
   }
+
 
   FUNCEND;
 

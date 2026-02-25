@@ -825,7 +825,7 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
           if (func(elem->value)) {
             free((void *)elem->value);
             memset(&(elem->key), 0, sizeof(ioa_addr));
-            elem->value = NULL;
+            elem->value = 0;
             count++;
           }
         }
@@ -838,7 +838,7 @@ int addr_list_foreach_del_condition(ur_addr_map *map, ur_addr_map_cond_func func
             if (func(elem->value)) {
               free((void *)elem->value);
               memset(&(elem->key), 0, sizeof(ioa_addr));
-              elem->value = NULL;
+              elem->value = 0;
               count++;
             }
           }
