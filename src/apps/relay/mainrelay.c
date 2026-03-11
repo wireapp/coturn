@@ -2304,7 +2304,7 @@ static void set_option(int c, char *value) {
     break;
   case PROMETHEUS_PORT_OPT:
 #if !defined(TURN_NO_PROMETHEUS)
-    prometheus_port = atoi(value);
+    turn_params.prometheus_port = atoi(value);
     turn_params.prometheus = turn_params.prometheus == PROM_DISABLED ? PROM_ENABLED : turn_params.prometheus;
 #endif
     break;
