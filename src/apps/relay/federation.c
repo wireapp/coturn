@@ -11,6 +11,8 @@
 #include <openssl/x509v3.h>
 #include <pthread.h>
 
+#define DTLSv1_2_SUPPORTED 1
+
 ///////////////////////////////////////////////////
 
 // Whitelist data

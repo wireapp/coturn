@@ -268,7 +268,8 @@ static ioa_socket_handle dtls_accept_client_connection(dtls_listener_relay_serve
       create_ioa_socket_from_ssl(server->e, sock, ssl, DTLS_SOCKET, CLIENT_SOCKET, remote_addr, local_addr);
 
   if (ioas) {
-    set_ioa_socket_buf_size(ioas, server->ts->sock_buf_size);
+    if (server->ts)
+      set_ioa_socket_buf_size(ioas, server->ts->sock_buf_size);
 
     addr_cpy(&(server->sm.m.sm.nd.src_addr), remote_addr);
     server->sm.m.sm.nd.recv_ttl = TTL_IGNORE;
@@ -516,7 +517,8 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
                       (char *)saddr, (char *)rsaddr);
       }
       s->e = ioa_eng;
-      set_ioa_socket_buf_size(s, ts->sock_buf_size);
+      if (ts)
+        set_ioa_socket_buf_size(s, ts->sock_buf_size);
       add_socket_to_map(s, amap);
 
       if(server->federation_listener) {
@@ -536,7 +538,7 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
 
         return 0;
       } else {
-        if (open_client_connection_session(ts, &(sm->m.sm)) < 0) {
+        if (ts && open_client_connection_session(ts, &(sm->m.sm)) < 0) {
           return -1;
         }
       }
@@ -971,7 +973,8 @@ static int reopen_server_socket(dtls_listener_relay_server_type *server, evutil_
     /* some UDP sessions may fail due to the race condition here */
 
     set_socket_options(server->udp_listen_s);
-    set_ioa_socket_buf_size(server->udp_listen_s, server->ts->sock_buf_size);
+    if (server->ts)
+      set_ioa_socket_buf_size(server->udp_listen_s, server->ts->sock_buf_size);
 
     if (sock_bind_to_device(udp_listen_fd, (unsigned char *)server->ifname) < 0) {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Cannot bind listener socket to device %s\n", server->ifname);
@@ -1104,7 +1107,7 @@ dtls_listener_relay_server_type *create_dtls_listener_server(const char *ifname,
 dtls_listener_relay_server_type* create_dtls_federation_listener_server(const char* ifname,
                                                                         const char *local_address, 
                                                                         int port,
-									int sock_buf_size,									
+									int sock_buf_size,
                                                                         int verbose,
                                                                         ioa_engine_handle e,
                                                                         turn_turnserver *ts,

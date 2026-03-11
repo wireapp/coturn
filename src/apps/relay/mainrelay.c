@@ -3752,11 +3752,16 @@ static int ServerALPNCallback(SSL *ssl, const unsigned char **out, unsigned char
 }
 
 void set_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *method) {
+  set_ctx_ex(out, protocol, method, turn_params.cert_file, turn_params.pkey_file, turn_params.tls_password);
+}
+
+void set_ctx_ex(SSL_CTX** out, const char *protocol, const SSL_METHOD* method, const char* cert_file, const char* pkey_file, char* pkey_pwd) {
+
   SSL_CTX *ctx = SSL_CTX_new(method);
   int err = 0;
   int rc = 0;
   SSL_CTX_set_alpn_select_cb(ctx, ServerALPNCallback, NULL);
-  SSL_CTX_set_default_passwd_cb_userdata(ctx, turn_params.tls_password);
+  SSL_CTX_set_default_passwd_cb_userdata(ctx, pkey_pwd);
   SSL_CTX_set_default_passwd_cb(ctx, pem_password_func);
 
   if (!(turn_params.cipher_list[0])) {
@@ -3772,12 +3777,12 @@ void set_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *method) {
   SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
   SSL_CTX_set_ciphersuites(ctx, turn_params.cipher_list);
 
-  if (!SSL_CTX_use_certificate_chain_file(ctx, turn_params.cert_file)) {
+  if (!SSL_CTX_use_certificate_chain_file(ctx, cert_file)) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: ERROR: no certificate found\n", protocol);
     err = 1;
   }
 
-  if (!SSL_CTX_use_PrivateKey_file(ctx, turn_params.pkey_file, SSL_FILETYPE_PEM)) {
+  if (!SSL_CTX_use_PrivateKey_file(ctx, pkey_file, SSL_FILETYPE_PEM)) {
     if (!SSL_CTX_use_RSAPrivateKey_file(ctx, turn_params.pkey_file, SSL_FILETYPE_PEM)) {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR,
                     "%s: ERROR: no valid private key found, or invalid private key password provided\n", protocol);
