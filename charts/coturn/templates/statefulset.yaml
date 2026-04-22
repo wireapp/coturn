@@ -82,6 +82,9 @@ spec:
           configMap:
             name: coturn-allowlist
         {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       initContainers:
         - name: get-external-ip
           {{- with .Values.externalIpHelper.image }}
@@ -186,6 +189,9 @@ spec:
               mountPath: /etc/coturn/allowlist.txt
               subPath: allowlist.txt
           {{- end }}
+          {{- with .Values.extraVolumeMounts }}
+          {{- toYaml . | nindent 12 }}
+          {{- end }}
           command:
             - /usr/bin/dumb-init
             - --
@@ -193,6 +199,9 @@ spec:
             - -c
             - |
               set -e
+              {{- if .Values.coredumps.enabled }}
+              ulimit -c unlimited
+              {{- end }}
               EXTERNAL_IP=$(cat /external-ip/ip)
               sed -Ee "s;__COTURN_EXT_IP__;$EXTERNAL_IP;g" -e "s;__COTURN_POD_IP__;$POD_IP;g" -e "s;__COTURN_HOST_IP__;$HOST_IP;g" /coturn-template/coturn.conf.template > /coturn-config/turnserver.conf
               sed -Ee 's/^/static-auth-secret=/' /secrets/zrest_secret.txt >> /coturn-config/turnserver.conf

@@ -189,3 +189,26 @@ readinessProbe:
 service:
   # Kubernetes annotations to be set at the Service
   annotations: {}
+
+# Enable coredump collection. Sets ulimit -c unlimited on the coturn process.
+# Use with extraVolumes/extraVolumeMounts to persist coredumps, e.g.:
+#   extraVolumes:
+#     - name: coredumps
+#       hostPath: { path: /var/coredumps, type: DirectoryOrCreate }
+#   extraVolumeMounts:
+#     - name: coredumps
+#       mountPath: /var/coredumps
+coredumps:
+  enabled: false
+
+# Additional volumes to add to the coturn pod
+extraVolumes: []
+# - name: coredumps
+#   hostPath:
+#     path: /var/coredumps
+#     type: DirectoryOrCreate
+
+# Additional volume mounts to add to the coturn container
+extraVolumeMounts: []
+# - name: coredumps
+#   mountPath: /var/coredumps
