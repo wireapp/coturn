@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  * Copyright (C) 2022 Wire Swiss GmbH
  *
@@ -39,6 +43,7 @@
 #include "ns_turn_server.h"
 
 #include <event2/event.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,16 +57,20 @@ struct dtls_listener_relay_server_info {
   ioa_addr addr;
   ioa_engine_handle e;
   turn_turnserver *ts;
+  int sock_buf_size;
   int verbose;
   struct event *udp_listen_ev;
   ioa_socket_handle udp_listen_s;
   ur_addr_map *children_ss; /* map of socket children on remote addr */
   struct message_to_relay sm;
-  int slen0;
+  size_t slen0;
   ioa_engine_new_connection_event_handler connect_cb;
+#if defined(__linux__)
+  struct dtls_listener_recvmmsg_state *recvmmsg_state;
+#endif
 
   // New members for federation
-  int federation_listener; // true/false
+  bool federation_listener; // true/false
 };
 typedef struct dtls_listener_relay_server_info dtls_listener_relay_server_type;
 
@@ -71,20 +80,18 @@ typedef struct dtls_listener_relay_server_info dtls_listener_relay_server_type;
 void setup_dtls_callbacks(SSL_CTX *ctx);
 #endif
 
-dtls_listener_relay_server_type *create_dtls_listener_server(const char *ifname, const char *local_address, int port,
-                                                             int verbose, ioa_engine_handle e, turn_turnserver *ts,
+dtls_listener_relay_server_type *create_dtls_listener_server(const char *ifname, const char *local_address,
+                                                             uint16_t port, int sock_buf_size, int verbose,
+                                                             ioa_engine_handle e, turn_turnserver *ts,
                                                              int report_creation,
                                                              ioa_engine_new_connection_event_handler send_socket);
 
-dtls_listener_relay_server_type* create_dtls_federation_listener_server(const char* ifname,
-                                                                        const char *local_address, 
-                                                                        int port,
-                                                                        int verbose,
-                                                                        ioa_engine_handle e,
-                                                                        turn_turnserver *ts,
-                                                                        int report_creation,
-                                                                        ioa_engine_new_connection_event_handler send_socket);
-
+dtls_listener_relay_server_type *create_dtls_federation_listener_server(const char *ifname, const char *local_address,
+                                                             uint16_t port, int sock_buf_size, int verbose,
+                                                             ioa_engine_handle e, turn_turnserver *ts,
+                                                             int report_creation,
+                                                             ioa_engine_new_connection_event_handler send_socket);
+	
 void udp_send_message(dtls_listener_relay_server_type *server, ioa_network_buffer_handle nbh, ioa_addr *dest);
 
 ioa_engine_handle get_engine(dtls_listener_relay_server_type *server);

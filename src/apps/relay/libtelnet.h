@@ -1,4 +1,6 @@
 /*!
+ * SPDX-License-Identifier: Unknown
+ *
  * \brief libtelnet - TELNET protocol handling library
  *
  * SUMMARY:
@@ -252,7 +254,7 @@ union telnet_event_t {
     enum telnet_event_type_t _type; /*!< alias for type */
     const char *buffer;             /*!< byte buffer */
     size_t size;                    /*!< number of bytes in buffer */
-  } data;
+  } data;                           /*!< DATA and SEND */
 
   /*!
    * WARNING and ERROR events
@@ -264,7 +266,7 @@ union telnet_event_t {
     const char *msg;                /*!< error message string */
     int line;                       /*!< line of file error occured on */
     telnet_error_t errcode;         /*!< error code */
-  } error;
+  } error;                          /*!< WARNING and ERROR */
 
   /*!
    * command event: for IAC
@@ -272,7 +274,7 @@ union telnet_event_t {
   struct iac_t {
     enum telnet_event_type_t _type; /*!< alias for type */
     unsigned char cmd;              /*!< telnet command received */
-  } iac;
+  } iac;                            /*!< IAC */
 
   /*!
    * negotiation event: WILL, WONT, DO, DONT
@@ -280,7 +282,7 @@ union telnet_event_t {
   struct negotiate_t {
     enum telnet_event_type_t _type; /*!< alias for type */
     unsigned char telopt;           /*!< option being negotiated */
-  } neg;
+  } neg;                            /*!< WILL, WONT, DO, DONT */
 
   /*!
    * subnegotiation event
@@ -290,7 +292,7 @@ union telnet_event_t {
     const char *buffer;             /*!< data of sub-negotiation */
     size_t size;                    /*!< number of bytes in buffer */
     unsigned char telopt;           /*!< option code for negotiation */
-  } sub;
+  } sub;                            /*!< SB */
 
   /*!
    * ZMP event
@@ -299,7 +301,7 @@ union telnet_event_t {
     enum telnet_event_type_t _type; /*!< alias for type */
     const char **argv;              /*!< array of argument string */
     size_t argc;                    /*!< number of elements in argv */
-  } zmp;
+  } zmp;                            /*!< ZMP */
 
   /*!
    * TTYPE event
@@ -308,7 +310,7 @@ union telnet_event_t {
     enum telnet_event_type_t _type; /*!< alias for type */
     unsigned char cmd;              /*!< TELNET_TTYPE_IS or TELNET_TTYPE_SEND */
     const char *name;               /*!< terminal type name (IS only) */
-  } ttype;
+  } ttype;                          /*!< TTYPE */
 
   /*!
    * COMPRESS event
@@ -317,7 +319,7 @@ union telnet_event_t {
     enum telnet_event_type_t _type; /*!< alias for type */
     unsigned char state;            /*!< 1 if compression is enabled,
                                      0 if disabled */
-  } compress;
+  } compress;                       /*!< COMPRESS */
 
   /*!
    * ENVIRON/NEW-ENVIRON event
@@ -327,7 +329,7 @@ union telnet_event_t {
     const struct telnet_environ_t *values; /*!< array of variable values */
     size_t size;                           /*!< number of elements in values */
     unsigned char cmd;                     /*!< SEND, IS, or INFO */
-  } environ;
+  } environ;                               /*!< ENVIRON, NEW-ENVIRON */
 
   /*!
    * MSSP event
@@ -336,7 +338,7 @@ union telnet_event_t {
     enum telnet_event_type_t _type;        /*!< alias for type */
     const struct telnet_environ_t *values; /*!< array of variable values */
     size_t size;                           /*!< number of elements in values */
-  } mssp;
+  } mssp;                                  /*!< MSSP */
 };
 
 /*!

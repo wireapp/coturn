@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -28,6 +32,14 @@
  * SUCH DAMAGE.
  */
 
+#include "ns_turn_defs.h"     // for STRCPY, turn_time_t, uint8_t, uint32_t
+#include "ns_turn_msg.h"      // for convert_oauth_key_data, decode_oauth_t...
+#include "ns_turn_msg_defs.h" // for oauth_token, oauth_encrypted_block
+#include "ns_turn_utils.h"
+
+#include "apputils.h"
+#include "stun_buffer.h"
+
 #if defined(__unix__)
 #include <unistd.h>
 #endif
@@ -38,10 +50,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
-#include "apputils.h"
-#include "ns_turn_utils.h"
-#include "stun_buffer.h"
 
 ////////////////////////////////////////////////////
 
@@ -78,9 +86,9 @@ static int setup_ikm_key(const char *kid, const char *ikm_key, const turn_time_t
   }
 
   char err_msg[1025] = "\0";
-  size_t err_msg_size = sizeof(err_msg) - 1;
+  const size_t err_msg_size = sizeof(err_msg) - 1;
 
-  if (convert_oauth_key_data(&okd, key, err_msg, err_msg_size) < 0) {
+  if (!convert_oauth_key_data(&okd, key, err_msg, err_msg_size)) {
     fprintf(stderr, "%s\n", err_msg);
     return -1;
   }
@@ -105,10 +113,11 @@ static int encode_token(const char *server_name, const char *gcm_nonce, const ch
   memset(&etoken, 0, sizeof(etoken));
 
   // TODO: avoid this hack
-  if (!*gcm_nonce)
+  if (!*gcm_nonce) {
     gcm_nonce = NULL;
+  }
 
-  if (encode_oauth_token((const uint8_t *)server_name, &etoken, &key, &ot, (const uint8_t *)gcm_nonce) < 0) {
+  if (!encode_oauth_token((const uint8_t *)server_name, &etoken, &key, &ot, (const uint8_t *)gcm_nonce)) {
     fprintf(stderr, "%s: cannot encode oauth token\n", __FUNCTION__);
     return -1;
   }
@@ -124,7 +133,7 @@ static int encode_token(const char *server_name, const char *gcm_nonce, const ch
 static int validate_decode_token(const char *server_name, const oauth_key key, const char *base64encoded_etoken,
                                  oauth_token *dot) {
 
-  memset((dot), 0, sizeof(*dot));
+  memset(dot, 0, sizeof(*dot));
 
   encoded_oauth_token etoken;
   memset(&etoken, 0, sizeof(etoken));
@@ -134,7 +143,7 @@ static int validate_decode_token(const char *server_name, const oauth_key key, c
   memcpy(etoken.token, tmp, etoken.size);
   free(tmp);
 
-  if (decode_oauth_token((const uint8_t *)server_name, &etoken, &key, dot) < 0) {
+  if (!decode_oauth_token((const uint8_t *)server_name, &etoken, &key, dot)) {
     fprintf(stderr, "%s: cannot decode oauth token\n", __FUNCTION__);
     return -1;
   } else {
@@ -156,8 +165,8 @@ static void print_token_body(oauth_token *dot) {
   printf("{\n");
   printf("    mac key: %s\n", (char *)dot->enc_block.mac_key);
   printf("    mac key length: %d\n", (int)dot->enc_block.key_length);
-  time_t time = dot->enc_block.timestamp >> 16;
-  unsigned msec = (dot->enc_block.timestamp & 0xFFFF) * 64;
+  const time_t time = dot->enc_block.timestamp >> 16;
+  const unsigned msec = (dot->enc_block.timestamp & 0xFFFF) * 64;
   printf("    timestamp:\n");
   printf("        unixtime: %u (localtime: %s )", (unsigned int)time, ctime(&time));
   printf("        msec:%u\n", msec);
@@ -203,7 +212,7 @@ int main(int argc, char **argv) {
 
   char mac_key[OAUTH_MAC_KEY_SIZE + 1] = "";
 
-  time_t current_time = time(NULL);
+  const time_t current_time = time(NULL);
   struct tm *gmt = gmtime(&current_time);
   uint64_t token_timestamp = (unsigned long long)mktime(gmt) << 16;
   uint32_t token_lifetime = OAUTH_TOKEN_LIFETIME;
@@ -370,8 +379,9 @@ int main(int argc, char **argv) {
     }
   }
 
-  for (i = optind; i < argc; i++)
+  for (i = optind; i < argc; i++) {
     printf("Non-option argument %s\n", argv[i]);
+  }
 
   if (optind > argc) {
     fprintf(stderr, "%s\n", Usage);
@@ -456,8 +466,9 @@ int main(int argc, char **argv) {
         oauth_token dot;
         if (validate_decode_token(server_name, key, base64encoded_etoken, &dot) == 0) {
           printf("-=Valid token!=-\n");
-          if (verbose_flag)
+          if (verbose_flag) {
             print_token_body(&dot);
+          }
         } else {
           fprintf(stderr, "Error during token validation and decoding\n");
           exit(-1);

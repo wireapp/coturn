@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -57,24 +61,21 @@ void print_field5769(const char *name, const void *f0, size_t len);
 void print_field5769(const char *name, const void *f0, size_t len) {
   const unsigned char *f = (const unsigned char *)f0;
   printf("\nfield %s %lu==>>\n", name, (unsigned long)len);
-  size_t i;
-  for (i = 0; i < len; ++i) {
+
+  for (size_t i = 0; i < len; ++i) {
     printf("\\x%02x", (unsigned int)f[i]);
   }
   printf("\n<<==field %s\n", name);
 }
 
 static int check_oauth(void) {
-
   const char server_name[33] = "blackdow.carleon.gov";
-
-  size_t i_encs;
 
   const char long_term_key[33] = "HGkj32KJGiuy098sdfaqbNjOiaz71923";
 
   size_t ltp_output_length = 0;
 
-  const char *base64encoded_ltp =
+  char *base64encoded_ltp =
       base64_encode((const unsigned char *)long_term_key, strlen(long_term_key), &ltp_output_length);
 
   const char mac_key[33] = "ZksjpweoixXmvn67534m";
@@ -90,13 +91,12 @@ static int check_oauth(void) {
 
   {
     {
-
-      for (i_encs = 0; encs[i_encs]; ++i_encs) {
-
+      for (size_t i_encs = 0; encs[i_encs]; ++i_encs) {
         printf("oauth token %s:", encs[i_encs]);
 
-        if (print_extra)
+        if (print_extra) {
           printf("\n");
+        }
 
         oauth_token ot;
         memset(&ot, 0, sizeof(ot));
@@ -127,11 +127,11 @@ static int check_oauth(void) {
             convert_oauth_key_data_raw(&okdr, &okd);
 
             char err_msg[1025] = "\0";
-            size_t err_msg_size = sizeof(err_msg) - 1;
+            const size_t err_msg_size = sizeof(err_msg) - 1;
 
-            if (convert_oauth_key_data(&okd, &key, err_msg, err_msg_size) < 0) {
+            if (!convert_oauth_key_data(&okd, &key, err_msg, err_msg_size)) {
               fprintf(stderr, "%s\n", err_msg);
-              return -1;
+              goto err;
             }
           }
         }
@@ -145,41 +145,41 @@ static int check_oauth(void) {
           encoded_oauth_token etoken;
           memset(&etoken, 0, sizeof(etoken));
 
-          if (encode_oauth_token((const uint8_t *)server_name, &etoken, &key, &ot, (const uint8_t *)gcm_nonce) < 0) {
+          if (!encode_oauth_token((const uint8_t *)server_name, &etoken, &key, &ot, (const uint8_t *)gcm_nonce)) {
             fprintf(stderr, "%s: cannot encode oauth token\n", __FUNCTION__);
-            return -1;
+            goto err;
           }
 
           if (print_extra) {
             print_field5769("encoded token", etoken.token, etoken.size);
           }
 
-          if (decode_oauth_token((const uint8_t *)server_name, &etoken, &key, &dot) < 0) {
+          if (!decode_oauth_token((const uint8_t *)server_name, &etoken, &key, &dot)) {
             fprintf(stderr, "%s: cannot decode oauth token\n", __FUNCTION__);
-            return -1;
+            goto err;
           }
         }
 
-        if (strcmp((char *)ot.enc_block.mac_key, (char *)dot.enc_block.mac_key)) {
+        if (0 != strcmp((char *)ot.enc_block.mac_key, (char *)dot.enc_block.mac_key)) {
           fprintf(stderr, "%s: wrong mac key: %s, must be %s\n", __FUNCTION__, (char *)dot.enc_block.mac_key,
                   (char *)ot.enc_block.mac_key);
-          return -1;
+          goto err;
         }
 
         if (ot.enc_block.key_length != dot.enc_block.key_length) {
           fprintf(stderr, "%s: wrong key length: %d, must be %d\n", __FUNCTION__, (int)dot.enc_block.key_length,
                   (int)ot.enc_block.key_length);
-          return -1;
+          goto err;
         }
         if (ot.enc_block.timestamp != dot.enc_block.timestamp) {
           fprintf(stderr, "%s: wrong timestamp: %llu, must be %llu\n", __FUNCTION__,
                   (unsigned long long)dot.enc_block.timestamp, (unsigned long long)ot.enc_block.timestamp);
-          return -1;
+          goto err;
         }
         if (ot.enc_block.lifetime != dot.enc_block.lifetime) {
           fprintf(stderr, "%s: wrong lifetime: %lu, must be %lu\n", __FUNCTION__, (unsigned long)dot.enc_block.lifetime,
                   (unsigned long)ot.enc_block.lifetime);
-          return -1;
+          goto err;
         }
 
         printf("OK\n");
@@ -187,7 +187,16 @@ static int check_oauth(void) {
     }
   }
 
+  if (base64encoded_ltp) {
+    free(base64encoded_ltp);
+  }
   return 0;
+
+err:
+  if (base64encoded_ltp) {
+    free(base64encoded_ltp);
+  }
+  return -1;
 }
 
 //////////////////////////////////////////////////
@@ -200,8 +209,9 @@ int main(int argc, const char **argv) {
   UNUSED_ARG(argc);
   UNUSED_ARG(argv);
 
-  if (argc > 1)
+  if (argc > 1) {
     print_extra = 1;
+  }
 
   set_logfile("stdout");
   set_no_stdout_log(1);
@@ -345,16 +355,16 @@ int main(int argc, const char **argv) {
         printf("failure: length %d, must be %d\n", (int)len, (int)(sizeof(reqltc) - 1));
         exit(-1);
       }
-      if (memcmp(buf, reqltc, len)) {
+      if (memcmp(buf, reqltc, len) != 0) {
         printf("failure: wrong message content\n");
         {
-          int lines = 29;
-          int line = 0;
-          int col = 0;
-          int cols = 4;
+          const size_t lines = 29;
+          size_t line = 0;
+          size_t col = 0;
+          const size_t cols = 4;
           for (line = 0; line < lines; line++) {
             for (col = 0; col < cols; col++) {
-              uint8_t c = buf[line * 4 + col];
+              const uint8_t c = buf[line * 4 + col];
               printf(" %2x", (int)c);
             }
             printf("\n");
@@ -451,8 +461,7 @@ int main(int argc, const char **argv) {
 
       printf("RFC 5769 IPv4 encoding result: ");
 
-      res = stun_attr_get_first_addr_str(buf, sizeof(respv4) - 1, STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, &addr4, NULL);
-      if (res < 0) {
+      if (!stun_attr_get_first_addr_str(buf, sizeof(respv4) - 1, STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, &addr4, NULL)) {
         printf("failure on message structure check\n");
         exit(-1);
       }
@@ -540,8 +549,7 @@ int main(int argc, const char **argv) {
 
       printf("RFC 5769 IPv6 encoding result: ");
 
-      res = stun_attr_get_first_addr_str(buf, sizeof(respv6) - 1, STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, &addr6, NULL);
-      if (res < 0) {
+      if (!stun_attr_get_first_addr_str(buf, sizeof(respv6) - 1, STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, &addr6, NULL)) {
         printf("failure on message structure check\n");
         exit(-1);
       }
@@ -556,9 +564,8 @@ int main(int argc, const char **argv) {
     }
   }
 
-  {
-    if (check_oauth() < 0)
-      exit(-1);
+  if (check_oauth() < 0) {
+    exit(-1);
   }
 
   return 0;

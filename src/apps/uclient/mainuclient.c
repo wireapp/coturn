@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -27,13 +31,12 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
 #include "apputils.h"
 #include "ns_turn_utils.h"
 #include "session.h"
-#include "stun_buffer.h"
 #include "uclient.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,27 +46,31 @@
 #include <getopt.h>
 #else
 #include <unistd.h>
+/* getopt_long lives in <getopt.h> on glibc and macOS libc; include it
+ * unconditionally on POSIX so the long-option table compiles. */
+#include <getopt.h>
 #endif
 
 /////////////// extern definitions /////////////////////
 
 int clmessage_length = 100;
-int do_not_use_channel = 0;
-int c2c = 0;
+bool do_not_use_channel = false;
+bool c2c = false;
 int clnet_verbose = TURN_VERBOSE_NONE;
-int use_tcp = 0;
-int use_sctp = 0;
-int use_secure = 0;
-int hang_on = 0;
+bool use_tcp = false;
+bool use_sctp = false;
+bool use_secure = false;
+bool hang_on = false;
 ioa_addr peer_addr;
-int no_rtcp = 0;
+bool no_rtcp = false;
+bool no_even_port = false;
 int default_address_family = STUN_ATTRIBUTE_REQUESTED_ADDRESS_FAMILY_VALUE_DEFAULT;
-int dont_fragment = 0;
+bool dont_fragment = false;
 uint8_t g_uname[STUN_MAX_USERNAME_SIZE + 1];
 password_t g_upwd;
 char g_auth_secret[1025] = "\0";
-int g_use_auth_secret_with_timestamp = 0;
-int use_fingerprints = 1;
+bool g_use_auth_secret_with_timestamp = false;
+bool use_fingerprints = true;
 
 static char ca_cert_file[1025] = "";
 static char cipher_suite[1025] = "";
@@ -74,26 +81,28 @@ int root_tls_ctx_num = 0;
 
 uint8_t relay_transport = STUN_ATTRIBUTE_TRANSPORT_UDP_VALUE;
 unsigned char client_ifname[1025] = "";
-int passive_tcp = 0;
-int mandatory_channel_padding = 0;
-int negative_test = 0;
-int negative_protocol_test = 0;
-int dos = 0;
-int random_disconnect = 0;
+bool passive_tcp = false;
+bool mandatory_channel_padding = false;
+bool negative_test = false;
+bool negative_protocol_test = false;
+bool dos = false;
+bool random_disconnect = false;
 
 SHATYPE shatype = SHATYPE_DEFAULT;
 
-int mobility = 0;
+bool mobility = false;
 
-int no_permissions = 0;
+bool no_permissions = false;
 
-int extra_requests = 0;
+bool extra_requests = false;
 
 char origin[STUN_MAX_ORIGIN_SIZE + 1] = "\0";
 
 band_limit_t bps = 0;
 
-int dual_allocation = 0;
+bool dual_allocation = false;
+bool unique_client_ports = false;
+uclient_load_mode load_mode = UCLIENT_LOAD_MODE_NONE;
 
 int oauth = 0;
 oauth_key okey_array[3];
@@ -104,6 +113,22 @@ static oauth_key_data_raw okdr_array[3] = {
     {"oldempire", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIK", 0, 0, "A256GCM", ""}};
 
 //////////////// local definitions /////////////////
+
+static uclient_load_mode parse_load_mode(const char *mode) {
+  if (!mode) {
+    return UCLIENT_LOAD_MODE_NONE;
+  }
+  if (!strcmp(mode, "packet")) {
+    return UCLIENT_LOAD_MODE_PACKET_FLOOD;
+  }
+  if (!strcmp(mode, "alloc")) {
+    return UCLIENT_LOAD_MODE_ALLOC_FLOOD;
+  }
+  if (!strcmp(mode, "invalid")) {
+    return UCLIENT_LOAD_MODE_INVALID_FLOOD;
+  }
+  return UCLIENT_LOAD_MODE_NONE;
+}
 
 static char Usage[] =
     "Usage: uclient [flags] [options] turn-server-ip-address\n"
@@ -135,6 +160,7 @@ static char Usage[] =
     "	-Z	Dual allocation (implies -c).\n"
     "	-J	Use oAuth with default test keys kid='north', 'union' or 'oldempire'.\n"
     "Options:\n"
+    "	-Y	<packet|alloc|invalid> Enable load-generator mode.\n"
     "	-l	Message length (Default: 100 Bytes).\n"
     "	-i	Certificate file (for secure connections only, optional).\n"
     "	-k	Private key file (for secure connections only).\n"
@@ -154,21 +180,38 @@ static char Usage[] =
     "	-C	TURN REST API timestamp/username separator symbol (character). The default value is ':'.\n"
     "	-F	<cipher-suite> Cipher suite for TLS/DTLS. Default value is DEFAULT.\n"
     "	-o	<origin> - the ORIGIN STUN attribute value.\n"
-    "	-a	<bytes-per-second> Bandwidth for the bandwidth request in ALLOCATE. The default value is zero.\n";
+    "	-a	<bytes-per-second> Bandwidth for the bandwidth request in ALLOCATE. The default value is zero.\n"
+    "	-K, --listener-threads <N>	Number of receive (listener) threads. Default auto: 0 for -m < 4,\n"
+    "				bumped to 1 when -m >= 4. 0 = legacy single-event-base (no worker thread).\n"
+    "				Each listener owns its own libevent base; sessions are sharded round-robin.\n"
+    "				Real-Linux bench shows K=2+ regresses on a 4-vCPU loadgen at low/mid m due to\n"
+    "				cross-thread cache-line bouncing on shared atomics; tune higher only if your\n"
+    "				hardware bench shows otherwise. Max 4. -K overrides the auto rule.\n"
+    "	--sender-threads <N>	Number of send (timer-driven) threads. Default auto: 0 for -m < 4,\n"
+    "				bumped to 2 when -m >= 4. 0 = legacy single-threaded send (main thread's\n"
+    "				timer_handler iterates all sessions). Each sender owns its own libevent base\n"
+    "				and a session shard; counters use per-thread cache-line-aligned slabs.\n"
+    "				Max 4. Explicit --sender-threads overrides the auto rule.\n"
+    "	--no-even-port		Never attach EVEN-PORT to allocate requests. The default path picks\n"
+    "				0 or -1 randomly under -c, which is rejected by --multiplex-peer with\n"
+    "				error 400. Use this for clean alloc-flood runs against multiplex-peer.\n";
 
 //////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
-  int port = 0;
+  uint16_t port = 0;
   int messagenumber = 5;
   char local_addr[256];
   int c;
   int mclient = 1;
   char peer_address[129] = "\0";
-  int peer_port = PEER_DEFAULT_PORT;
+  uint16_t peer_port = PEER_DEFAULT_PORT;
 
   char rest_api_separator = ':';
-  int use_null_cipher = 0;
+  bool use_null_cipher = false;
+  bool message_length_set = false;
+  bool message_count_set = false;
+  bool packet_interval_set = false;
 
 #if defined(WINDOWS)
 
@@ -197,7 +240,19 @@ int main(int argc, char **argv) {
 
   memset(local_addr, 0, sizeof(local_addr));
 
-  while ((c = getopt(argc, argv, "a:d:p:l:n:L:m:e:r:u:w:i:k:z:W:C:E:F:o:bZvsyhcxXgtTSAPDNOUMRIGBJ")) != -1) {
+  /* Long-option table for the few flags that don't fit cleanly into the
+   * historical single-letter getopt(3) namespace. New options should
+   * generally be added here. Mirrored to a short letter where one is
+   * still free (currently: -K for --listener-threads). */
+  enum { UCLIENT_OPT_SENDER_THREADS = 256, UCLIENT_OPT_NO_EVEN_PORT };
+  static const struct option uclient_long_opts[] = {
+      {"listener-threads", required_argument, NULL, 'K'},
+      {"sender-threads", required_argument, NULL, UCLIENT_OPT_SENDER_THREADS},
+      {"no-even-port", no_argument, NULL, UCLIENT_OPT_NO_EVEN_PORT},
+      {NULL, 0, NULL, 0}};
+
+  while ((c = getopt_long(argc, argv, "a:d:p:l:n:L:m:e:r:u:w:i:k:z:W:C:E:F:o:Y:K:bZvsyhcxXgtTSAPDNOUMRIGBJ",
+                          uclient_long_opts, NULL)) != -1) {
     switch (c) {
     case 'J': {
 
@@ -209,19 +264,19 @@ int main(int argc, char **argv) {
       convert_oauth_key_data_raw(&okdr_array[2], &okd_array[2]);
 
       char err_msg[1025] = "\0";
-      size_t err_msg_size = sizeof(err_msg) - 1;
+      const size_t err_msg_size = sizeof(err_msg) - 1;
 
-      if (convert_oauth_key_data(&okd_array[0], &okey_array[0], err_msg, err_msg_size) < 0) {
+      if (!convert_oauth_key_data(&okd_array[0], &okey_array[0], err_msg, err_msg_size)) {
         fprintf(stderr, "%s\n", err_msg);
         exit(-1);
       }
 
-      if (convert_oauth_key_data(&okd_array[1], &okey_array[1], err_msg, err_msg_size) < 0) {
+      if (!convert_oauth_key_data(&okd_array[1], &okey_array[1], err_msg, err_msg_size)) {
         fprintf(stderr, "%s\n", err_msg);
         exit(-1);
       }
 
-      if (convert_oauth_key_data(&okd_array[2], &okey_array[2], err_msg, err_msg_size) < 0) {
+      if (!convert_oauth_key_data(&okd_array[2], &okey_array[2], err_msg, err_msg_size)) {
         fprintf(stderr, "%s\n", err_msg);
         exit(-1);
       }
@@ -229,26 +284,54 @@ int main(int argc, char **argv) {
     case 'a':
       bps = (band_limit_t)strtoul(optarg, NULL, 10);
       break;
+    case 'K': {
+      const long n = strtol(optarg, NULL, 10);
+      if (n < 0 || n > UCLIENT_MAX_LISTENER_THREADS) {
+        fprintf(stderr, "Invalid --listener-threads %ld; valid range is 0..%d\n", n, UCLIENT_MAX_LISTENER_THREADS);
+        exit(1);
+      }
+      num_listener_threads = (int)n;
+      num_listener_threads_explicit = true;
+    } break;
+    case UCLIENT_OPT_SENDER_THREADS: {
+      const long n = strtol(optarg, NULL, 10);
+      if (n < 0 || n > UCLIENT_MAX_SENDER_THREADS) {
+        fprintf(stderr, "Invalid --sender-threads %ld; valid range is 0..%d\n", n, UCLIENT_MAX_SENDER_THREADS);
+        exit(1);
+      }
+      num_sender_threads = (int)n;
+      num_sender_threads_explicit = true;
+    } break;
+    case UCLIENT_OPT_NO_EVEN_PORT:
+      no_even_port = true;
+      break;
+    case 'Y':
+      load_mode = parse_load_mode(optarg);
+      if (load_mode == UCLIENT_LOAD_MODE_NONE) {
+        fprintf(stderr, "Unknown load mode: %s\n", optarg);
+        exit(1);
+      }
+      break;
     case 'o':
       STRCPY(origin, optarg);
       break;
     case 'B':
-      random_disconnect = 1;
+      random_disconnect = true;
       break;
     case 'G':
-      extra_requests = 1;
+      extra_requests = true;
       break;
     case 'F':
       STRCPY(cipher_suite, optarg);
       break;
     case 'I':
-      no_permissions = 1;
+      no_permissions = true;
       break;
     case 'M':
-      mobility = 1;
+      mobility = true;
       break;
     case 'E': {
-      char *fn = find_config_file(optarg, 1);
+      char *fn = find_config_file(optarg);
       if (!fn) {
         fprintf(stderr, "ERROR: file %s not found\n", optarg);
         exit(-1);
@@ -256,25 +339,26 @@ int main(int argc, char **argv) {
       STRCPY(ca_cert_file, fn);
     } break;
     case 'O':
-      dos = 1;
+      dos = true;
       break;
     case 'C':
       rest_api_separator = *optarg;
       break;
     case 'D':
-      mandatory_channel_padding = 1;
+      mandatory_channel_padding = true;
       break;
     case 'N':
-      negative_test = 1;
+      negative_test = true;
       break;
     case 'R':
-      negative_protocol_test = 1;
+      negative_protocol_test = true;
       break;
     case 'z':
+      packet_interval_set = true;
       RTP_PACKET_INTERVAL = atoi(optarg);
       break;
     case 'Z':
-      dual_allocation = 1;
+      dual_allocation = true;
       break;
     case 'u':
       STRCPY(g_uname, optarg);
@@ -283,7 +367,7 @@ int main(int argc, char **argv) {
       STRCPY(g_upwd, optarg);
       break;
     case 'g':
-      dont_fragment = 1;
+      dont_fragment = true;
       break;
     case 'd':
       STRCPY(client_ifname, optarg);
@@ -295,12 +379,14 @@ int main(int argc, char **argv) {
       default_address_family = STUN_ATTRIBUTE_REQUESTED_ADDRESS_FAMILY_VALUE_IPV4;
       break;
     case 'l':
+      message_length_set = true;
       clmessage_length = atoi(optarg);
       break;
     case 's':
-      do_not_use_channel = 1;
+      do_not_use_channel = true;
       break;
     case 'n':
+      message_count_set = true;
       messagenumber = atoi(optarg);
       break;
     case 'p':
@@ -319,26 +405,26 @@ int main(int argc, char **argv) {
       clnet_verbose = TURN_VERBOSE_NORMAL;
       break;
     case 'h':
-      hang_on = 1;
+      hang_on = true;
       break;
     case 'c':
-      no_rtcp = 1;
+      no_rtcp = true;
       break;
     case 'm':
       mclient = atoi(optarg);
       break;
     case 'y':
-      c2c = 1;
+      c2c = true;
       break;
     case 't':
-      use_tcp = 1;
+      use_tcp = true;
       break;
     case 'b':
-      use_sctp = 1;
-      use_tcp = 1;
+      use_sctp = true;
+      use_tcp = true;
       break;
     case 'P':
-      passive_tcp = 1;
+      passive_tcp = true;
       /* implies 'T': */
       /* no break */
       /* Falls through. */
@@ -346,19 +432,19 @@ int main(int argc, char **argv) {
       relay_transport = STUN_ATTRIBUTE_TRANSPORT_TCP_VALUE;
       break;
     case 'U':
-      use_null_cipher = 1;
+      use_null_cipher = true;
       /* implies 'S' */
       /* no break */
       /* Falls through. */
     case 'S':
-      use_secure = 1;
+      use_secure = true;
       break;
     case 'W':
-      g_use_auth_secret_with_timestamp = 1;
+      g_use_auth_secret_with_timestamp = true;
       STRCPY(g_auth_secret, optarg);
       break;
     case 'i': {
-      char *fn = find_config_file(optarg, 1);
+      char *fn = find_config_file(optarg);
       if (!fn) {
         fprintf(stderr, "ERROR: file %s not found\n", optarg);
         exit(-1);
@@ -367,7 +453,7 @@ int main(int argc, char **argv) {
       free(fn);
     } break;
     case 'k': {
-      char *fn = find_config_file(optarg, 1);
+      char *fn = find_config_file(optarg);
       if (!fn) {
         fprintf(stderr, "ERROR: file %s not found\n", optarg);
         exit(-1);
@@ -382,7 +468,32 @@ int main(int argc, char **argv) {
   }
 
   if (dual_allocation) {
-    no_rtcp = 1;
+    no_rtcp = true;
+  }
+
+  if (is_load_generator_mode()) {
+    no_rtcp = true;
+
+    if (!message_count_set) {
+      messagenumber = 0;
+    }
+
+    if ((is_packet_flood_mode() || is_invalid_flood_mode()) && !packet_interval_set) {
+      RTP_PACKET_INTERVAL = 0;
+    }
+
+    if (is_invalid_flood_mode() && !message_length_set) {
+      clmessage_length = 16;
+    }
+
+    if (is_alloc_flood_mode()) {
+      unique_client_ports = true;
+    }
+
+    if (c2c) {
+      fprintf(stderr, "Load-generator mode does not support -y client-to-client mode\n");
+      exit(1);
+    }
   }
 
   if (g_use_auth_secret_with_timestamp) {
@@ -419,7 +530,7 @@ int main(int argc, char **argv) {
       hmac[0] = 0;
 
       if (stun_calculate_hmac(g_uname, strlen((char *)g_uname), (uint8_t *)g_auth_secret, strlen(g_auth_secret), hmac,
-                              &hmac_len, shatype) >= 0) {
+                              &hmac_len, shatype)) {
         size_t pwd_length = 0;
         char *pwd = base64_encode(hmac, hmac_len, &pwd_length);
 
@@ -435,27 +546,34 @@ int main(int argc, char **argv) {
   }
 
   if (is_TCP_relay()) {
-    dont_fragment = 0;
-    no_rtcp = 1;
-    c2c = 1;
-    use_tcp = 1;
-    do_not_use_channel = 1;
+    dont_fragment = false;
+    no_rtcp = true;
+    c2c = true;
+    use_tcp = true;
+    do_not_use_channel = true;
   }
 
   if (port == 0) {
-    if (use_secure)
+    if (use_secure) {
       port = DEFAULT_STUN_TLS_PORT;
-    else
+    } else {
       port = DEFAULT_STUN_PORT;
+    }
   }
 
-  if (clmessage_length < (int)sizeof(message_info))
+  if (!is_invalid_flood_mode() && clmessage_length < (int)sizeof(message_info)) {
     clmessage_length = (int)sizeof(message_info);
+  }
+
+  if (is_invalid_flood_mode() && clmessage_length < 1) {
+    clmessage_length = 1;
+  }
 
   const int max_header = 100;
-  if (clmessage_length > (int)(STUN_BUFFER_SIZE - max_header)) {
-    fprintf(stderr, "Message length was corrected to %d\n", (STUN_BUFFER_SIZE - max_header));
-    clmessage_length = (int)(STUN_BUFFER_SIZE - max_header);
+  const int max_message_length = is_invalid_flood_mode() ? (int)STUN_BUFFER_SIZE : (int)(STUN_BUFFER_SIZE - max_header);
+  if (clmessage_length > max_message_length) {
+    fprintf(stderr, "Message length was corrected to %d\n", max_message_length);
+    clmessage_length = max_message_length;
   }
 
   if (optind >= argc) {
@@ -463,7 +581,7 @@ int main(int argc, char **argv) {
     exit(-1);
   }
 
-  if (!c2c) {
+  if (!c2c && !is_alloc_flood_mode() && !is_invalid_flood_mode()) {
     if (!peer_address[0]) {
       fprintf(stderr, "Either -e peer_address or -y must be specified\n");
       return -1;
@@ -488,46 +606,23 @@ int main(int argc, char **argv) {
     OpenSSL_add_ssl_algorithms();
 
     const char *csuite = "ALL"; //"AES256-SHA" "DH"
-    if (use_null_cipher)
+    if (use_null_cipher) {
       csuite = "eNULL";
-    else if (cipher_suite[0])
+    } else if (cipher_suite[0]) {
       csuite = cipher_suite;
+    }
 
     if (use_tcp) {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-#if TLSv1_2_SUPPORTED
-      root_tls_ctx[root_tls_ctx_num] = SSL_CTX_new(TLSv1_2_client_method());
-#elif TLSv1_1_SUPPORTED
-      root_tls_ctx[root_tls_ctx_num] = SSL_CTX_new(TLSv1_1_client_method());
-#else
-      root_tls_ctx[root_tls_ctx_num] = SSL_CTX_new(TLSv1_client_method());
-#endif
-      SSL_CTX_set_cipher_list(root_tls_ctx[root_tls_ctx_num], csuite);
-#else // OPENSSL_VERSION_NUMBER >= 0x10100000L
       root_tls_ctx[root_tls_ctx_num] = SSL_CTX_new(TLS_client_method());
       SSL_CTX_set_cipher_list(root_tls_ctx[root_tls_ctx_num], csuite);
-#endif
       root_tls_ctx_num++;
     } else {
 #if !DTLS_SUPPORTED
       fprintf(stderr, "ERROR: DTLS is not supported.\n");
       exit(-1);
 #else
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-      if (OPENSSL_VERSION_NUMBER < 0x10000000L) {
-        TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING,
-                      "WARNING: OpenSSL version is rather old, DTLS may not be working correctly.\n");
-      }
-#if DTLSv1_2_SUPPORTED
-      root_tls_ctx[root_tls_ctx_num] = SSL_CTX_new(DTLSv1_2_client_method());
-#else
-      root_tls_ctx[root_tls_ctx_num] = SSL_CTX_new(DTLSv1_client_method());
-#endif
-      SSL_CTX_set_cipher_list(root_tls_ctx[root_tls_ctx_num], csuite);
-#else // OPENSSL_VERSION_NUMBER >= 0x10100000L
       root_tls_ctx[root_tls_ctx_num] = SSL_CTX_new(DTLS_client_method());
       SSL_CTX_set_cipher_list(root_tls_ctx[root_tls_ctx_num], csuite);
-#endif
 #endif
       root_tls_ctx_num++;
     }

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -31,7 +35,9 @@
 #ifndef __LIB_TURN_MSG_DEFS__
 #define __LIB_TURN_MSG_DEFS__
 
-#include "ns_turn_msg_defs_experimental.h"
+#include "ns_turn_defs.h" // for turn_time_t
+
+#include "ns_turn_msg_defs_experimental.h" // IWYU pragma: export
 
 ///////////////////////////////////////////
 // http://www.iana.org/assignments/stun-parameters/stun-parameters.xhtml
@@ -129,6 +135,11 @@
 /* RFC 6062 ==>> */
 #define STUN_ATTRIBUTE_CONNECTION_ID (0x002A)
 /* <<== RFC 6062 */
+
+/* RFC 8656 ==>> */
+#define STUN_ATTRIBUTE_ADDITIONAL_ADDRESS_FAMILY (0x8000)
+#define STUN_ATTRIBUTE_ADDRESS_ERROR_CODE (0x8001)
+/* <<== RFC 8656 */
 
 #define STUN_VALID_CHANNEL(chn) ((chn) >= 0x4000 && (chn) <= 0x7FFF)
 

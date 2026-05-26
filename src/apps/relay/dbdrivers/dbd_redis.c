@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  * Copyright (C) 2014 Vivocha S.p.A.
  *
@@ -33,7 +37,7 @@
 #include "../mainrelay.h"
 
 #if !defined(TURN_NO_HIREDIS)
-#include "hiredis_libevent2.h"
+#include "../hiredis_libevent2.h"
 #include <hiredis/hiredis.h>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -49,6 +53,7 @@ static void turnFreeRedisReply(void *reply) {
 struct _Ryconninfo {
   char *host;
   char *dbname;
+  char *user;
   char *password;
   unsigned int connect_timeout;
   unsigned int port;
@@ -58,28 +63,34 @@ typedef struct _Ryconninfo Ryconninfo;
 
 static void RyconninfoFree(Ryconninfo *co) {
   if (co) {
-    if (co->host)
+    if (co->host) {
       free(co->host);
-    if (co->dbname)
+    }
+    if (co->dbname) {
       free(co->dbname);
-    if (co->password)
+    }
+    if (co->user) {
+      free(co->user);
+    }
+    if (co->password) {
       free(co->password);
+    }
     memset(co, 0, sizeof(Ryconninfo));
     free(co);
   }
 }
 
 static Ryconninfo *RyconninfoParse(const char *userdb, char **errmsg) {
-  Ryconninfo *co = (Ryconninfo *)malloc(sizeof(Ryconninfo));
-  memset(co, 0, sizeof(Ryconninfo));
+  Ryconninfo *co = (Ryconninfo *)calloc(1, sizeof(Ryconninfo));
   if (userdb) {
     char *s0 = strdup(userdb);
     char *s = s0;
 
     while (s && *s) {
 
-      while (*s && (*s == ' '))
+      while (*s && (*s == ' ')) {
         ++s;
+      }
       char *snext = strstr(s, " ");
       if (snext) {
         *snext = 0;
@@ -97,47 +108,47 @@ static Ryconninfo *RyconninfoParse(const char *userdb, char **errmsg) {
       }
 
       *seq = 0;
-      if (!strcmp(s, "host"))
+      if (!strcmp(s, "host")) {
         co->host = strdup(seq + 1);
-      else if (!strcmp(s, "ip"))
+      } else if (!strcmp(s, "ip")) {
         co->host = strdup(seq + 1);
-      else if (!strcmp(s, "addr"))
+      } else if (!strcmp(s, "addr")) {
         co->host = strdup(seq + 1);
-      else if (!strcmp(s, "ipaddr"))
+      } else if (!strcmp(s, "ipaddr")) {
         co->host = strdup(seq + 1);
-      else if (!strcmp(s, "hostaddr"))
+      } else if (!strcmp(s, "hostaddr")) {
         co->host = strdup(seq + 1);
-      else if (!strcmp(s, "dbname"))
+      } else if (!strcmp(s, "dbname")) {
         co->dbname = strdup(seq + 1);
-      else if (!strcmp(s, "db"))
+      } else if (!strcmp(s, "db")) {
         co->dbname = strdup(seq + 1);
-      else if (!strcmp(s, "database"))
+      } else if (!strcmp(s, "database")) {
         co->dbname = strdup(seq + 1);
-      else if (!strcmp(s, "user"))
-        ;
-      else if (!strcmp(s, "uname"))
-        ;
-      else if (!strcmp(s, "name"))
-        ;
-      else if (!strcmp(s, "username"))
-        ;
-      else if (!strcmp(s, "password"))
+      } else if (!strcmp(s, "user")) {
+        co->user = strdup(seq + 1);
+      } else if (!strcmp(s, "uname")) {
+        co->user = strdup(seq + 1);
+      } else if (!strcmp(s, "name")) {
+        co->user = strdup(seq + 1);
+      } else if (!strcmp(s, "username")) {
+        co->user = strdup(seq + 1);
+      } else if (!strcmp(s, "password")) {
         co->password = strdup(seq + 1);
-      else if (!strcmp(s, "pwd"))
+      } else if (!strcmp(s, "pwd")) {
         co->password = strdup(seq + 1);
-      else if (!strcmp(s, "passwd"))
+      } else if (!strcmp(s, "passwd")) {
         co->password = strdup(seq + 1);
-      else if (!strcmp(s, "secret"))
+      } else if (!strcmp(s, "secret")) {
         co->password = strdup(seq + 1);
-      else if (!strcmp(s, "port"))
+      } else if (!strcmp(s, "port")) {
         co->port = (unsigned int)atoi(seq + 1);
-      else if (!strcmp(s, "p"))
+      } else if (!strcmp(s, "p")) {
         co->port = (unsigned int)atoi(seq + 1);
-      else if (!strcmp(s, "connect_timeout"))
+      } else if (!strcmp(s, "connect_timeout")) {
         co->connect_timeout = (unsigned int)atoi(seq + 1);
-      else if (!strcmp(s, "timeout"))
+      } else if (!strcmp(s, "timeout")) {
         co->connect_timeout = (unsigned int)atoi(seq + 1);
-      else {
+      } else {
         RyconninfoFree(co);
         co = NULL;
         if (errmsg) {
@@ -153,12 +164,12 @@ static Ryconninfo *RyconninfoParse(const char *userdb, char **errmsg) {
   }
 
   if (co) {
-    if (!(co->dbname))
+    if (!(co->dbname)) {
       co->dbname = strdup("0");
-    if (!(co->host))
+    }
+    if (!(co->host)) {
       co->host = strdup("127.0.0.1");
-    if (!(co->password))
-      co->password = strdup("");
+    }
   }
 
   return co;
@@ -195,13 +206,16 @@ redis_context_handle get_redis_async_connection(struct event_base *base, redis_s
 
         char ip[256] = "\0";
         int port = DEFAULT_REDIS_PORT;
-        if (co->host)
+        if (co->host) {
           STRCPY(ip, co->host);
-        if (!ip[0])
+        }
+        if (!ip[0]) {
           strncpy(ip, "127.0.0.1", sizeof(ip));
+        }
 
-        if (co->port)
+        if (co->port) {
           port = (int)(co->port);
+        }
 
         if (co->connect_timeout) {
           struct timeval tv;
@@ -215,8 +229,12 @@ redis_context_handle get_redis_async_connection(struct event_base *base, redis_s
         if (!rc) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot initialize Redis DB async connection\n");
         } else {
-          if (co->password) {
-            turnFreeRedisReply(redisCommand(rc, "AUTH %s", co->password));
+          if (co->password && strlen(co->password)) {
+            if (co->user && strlen(co->user)) {
+              turnFreeRedisReply(redisCommand(rc, "AUTH %s %s", co->user, co->password));
+            } else {
+              turnFreeRedisReply(redisCommand(rc, "AUTH %s", co->password));
+            }
           }
           if (co->dbname) {
             turnFreeRedisReply(redisCommand(rc, "select %s", co->dbname));
@@ -226,15 +244,15 @@ redis_context_handle get_redis_async_connection(struct event_base *base, redis_s
             if (reply) {
               secrets_list_t keys;
               size_t isz = 0;
-              char s[513];
 
               init_secrets_list(&keys);
 
               if (reply->type == REDIS_REPLY_ERROR) {
                 TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
               } else if (reply->type != REDIS_REPLY_ARRAY) {
-                if (reply->type != REDIS_REPLY_NIL)
+                if (reply->type != REDIS_REPLY_NIL) {
                   TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+                }
               } else {
                 size_t i;
                 for (i = 0; i < reply->elements; ++i) {
@@ -243,9 +261,7 @@ redis_context_handle get_redis_async_connection(struct event_base *base, redis_s
               }
 
               for (isz = 0; isz < keys.sz; ++isz) {
-
-                snprintf(s, sizeof(s), "del %s", keys.secrets[isz]);
-                turnFreeRedisReply(redisCommand(rc, s));
+                turnFreeRedisReply(redisCommand(rc, "del %s", keys.secrets[isz]));
               }
 
               clean_secrets_list(&keys);
@@ -257,7 +273,7 @@ redis_context_handle get_redis_async_connection(struct event_base *base, redis_s
         }
       }
 
-      ret = redisLibeventAttach(base, co->host, co->port, co->password, atoi(co->dbname));
+      ret = redisLibeventAttach(base, co->host, co->port, co->user, co->password, atoi(co->dbname));
 
       if (!ret) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot initialize Redis DB connection\n");
@@ -310,13 +326,16 @@ static redisContext *get_redis_connection(void) {
     } else {
       char ip[256] = "\0";
       int port = DEFAULT_REDIS_PORT;
-      if (co->host)
+      if (co->host) {
         STRCPY(ip, co->host);
-      if (!ip[0])
+      }
+      if (!ip[0]) {
         strncpy(ip, "127.0.0.1", sizeof(ip));
+      }
 
-      if (co->port)
+      if (co->port) {
         port = (int)(co->port);
+      }
 
       if (co->connect_timeout) {
         struct timeval tv;
@@ -327,36 +346,42 @@ static redisContext *get_redis_connection(void) {
         redisconnection = redisConnect(ip, port);
       }
 
-      if (redisconnection) {
-        if (redisconnection->err) {
-          if (redisconnection->errstr[0]) {
+      if (redisconnection && redisconnection->err) {
+        if (redisconnection->errstr[0]) {
+          TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Redis: %s\n", redisconnection->errstr);
+        }
+        redisFree(redisconnection);
+        redisconnection = NULL;
+      }
+
+      if (redisconnection && co->password && co->password[0]) {
+        void *reply;
+        if (co->user && co->user[0]) {
+          reply = redisCommand(redisconnection, "AUTH %s %s", co->user, co->password);
+        } else {
+          reply = redisCommand(redisconnection, "AUTH %s", co->password);
+        }
+        if (!reply) {
+          if (redisconnection->err && redisconnection->errstr[0]) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Redis: %s\n", redisconnection->errstr);
           }
           redisFree(redisconnection);
           redisconnection = NULL;
-        } else if (co->password) {
-          void *reply = redisCommand(redisconnection, "AUTH %s", co->password);
-          if (!reply) {
-            if (redisconnection->err && redisconnection->errstr[0]) {
-              TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Redis: %s\n", redisconnection->errstr);
-            }
-            redisFree(redisconnection);
-            redisconnection = NULL;
-          } else {
-            turnFreeRedisReply(reply);
-            if (co->dbname) {
-              reply = redisCommand(redisconnection, "select %s", co->dbname);
-              if (!reply) {
-                if (redisconnection->err && redisconnection->errstr[0]) {
-                  TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Redis: %s\n", redisconnection->errstr);
-                }
-                redisFree(redisconnection);
-                redisconnection = NULL;
-              } else {
-                turnFreeRedisReply(reply);
-              }
-            }
+        } else {
+          turnFreeRedisReply(reply);
+        }
+      }
+
+      if (redisconnection && co->dbname) {
+        void *reply = redisCommand(redisconnection, "select %s", co->dbname);
+        if (!reply) {
+          if (redisconnection->err && redisconnection->errstr[0]) {
+            TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Redis: %s\n", redisconnection->errstr);
           }
+          redisFree(redisconnection);
+          redisconnection = NULL;
+        } else {
+          turnFreeRedisReply(reply);
         }
       }
 
@@ -385,17 +410,17 @@ static int set_redis_realm_opt(char *realm, const char *key, unsigned long *valu
   if (rc) {
     redisReply *rget = NULL;
 
-    char s[1025];
-
-    snprintf(s, sizeof(s), "get turn/realm/%s/%s", realm, key);
-
-    rget = (redisReply *)redisCommand(rc, s);
+    /* Pass user/realm bytes as %s args to redisCommand, never as the format string itself.
+       Otherwise a `%` in network-controlled input is interpreted as a printf format specifier,
+       leading to crash or memory disclosure. */
+    rget = (redisReply *)redisCommand(rc, "get turn/realm/%s/%s", realm, key);
     if (rget) {
-      if (rget->type == REDIS_REPLY_ERROR)
+      if (rget->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", rget->str);
-      else if (rget->type != REDIS_REPLY_STRING) {
-        if (rget->type != REDIS_REPLY_NIL)
+      } else if (rget->type != REDIS_REPLY_STRING) {
+        if (rget->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", rget->type);
+        }
       } else {
         lock_realms();
         *value = (unsigned long)atol(rget->str);
@@ -418,11 +443,12 @@ static int redis_get_auth_secrets(secrets_list_t *sl, uint8_t *realm) {
     redisReply *reply = (redisReply *)redisCommand(rc, "smembers turn/realm/%s/secret", (char *)realm);
     if (reply) {
 
-      if (reply->type == REDIS_REPLY_ERROR)
+      if (reply->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-      else if (reply->type != REDIS_REPLY_ARRAY) {
-        if (reply->type != REDIS_REPLY_NIL)
+      } else if (reply->type != REDIS_REPLY_ARRAY) {
+        if (reply->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+        }
       } else {
         size_t i;
         for (i = 0; i < reply->elements; ++i) {
@@ -442,22 +468,22 @@ static int redis_get_user_key(uint8_t *usname, uint8_t *realm, hmackey_t key) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
-    snprintf(s, sizeof(s), "get turn/realm/%s/user/%s/key", (char *)realm, usname);
-    redisReply *rget = (redisReply *)redisCommand(rc, s);
+    /* usname/realm come from STUN USERNAME/REALM attributes — passing them through the
+       format string would let `%` in attacker-controlled bytes act as printf specifiers. */
+    redisReply *rget = (redisReply *)redisCommand(rc, "get turn/realm/%s/user/%s/key", (char *)realm, (char *)usname);
     if (rget) {
-      if (rget->type == REDIS_REPLY_ERROR)
+      if (rget->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", rget->str);
-      else if (rget->type != REDIS_REPLY_STRING) {
-        if (rget->type != REDIS_REPLY_NIL)
+      } else if (rget->type != REDIS_REPLY_STRING) {
+        if (rget->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", rget->type);
+        }
       } else {
         size_t sz = get_hmackey_size(SHATYPE_DEFAULT);
         if (strlen(rget->str) < sz * 2) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong key format: %s, user %s\n", rget->str, usname);
-        } else if (convert_string_key_to_binary(rget->str, key, sz) < 0) {
-          TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong key: %s, user %s\n", rget->str, usname);
         } else {
+          convert_string_key_to_binary(rget->str, key, sz);
           ret = 0;
         }
       }
@@ -471,17 +497,16 @@ static int redis_get_oauth_key(const uint8_t *kid, oauth_key_data_raw *key) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
     memset(key, 0, sizeof(oauth_key_data_raw));
     STRCPY(key->kid, kid);
-    snprintf(s, sizeof(s), "hgetall turn/oauth/kid/%s", (const char *)kid);
-    redisReply *reply = (redisReply *)redisCommand(rc, s);
+    redisReply *reply = (redisReply *)redisCommand(rc, "hgetall turn/oauth/kid/%s", (const char *)kid);
     if (reply) {
-      if (reply->type == REDIS_REPLY_ERROR)
+      if (reply->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-      else if (reply->type != REDIS_REPLY_ARRAY) {
-        if (reply->type != REDIS_REPLY_NIL)
+      } else if (reply->type != REDIS_REPLY_ARRAY) {
+        if (reply->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+        }
       } else if (reply->elements > 1) {
         size_t i;
         for (i = 0; i < (reply->elements) / 2; ++i) {
@@ -513,9 +538,7 @@ static int redis_set_user_key(uint8_t *usname, uint8_t *realm, const char *key) 
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char statement[TURN_LONG_STRING_SIZE];
-    snprintf(statement, sizeof(statement), "set turn/realm/%s/user/%s/key %s", (char *)realm, usname, key);
-    turnFreeRedisReply(redisCommand(rc, statement));
+    turnFreeRedisReply(redisCommand(rc, "set turn/realm/%s/user/%s/key %s", (char *)realm, (char *)usname, key));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -526,12 +549,9 @@ static int redis_set_oauth_key(oauth_key_data_raw *key) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char statement[TURN_LONG_STRING_SIZE];
-    snprintf(statement, sizeof(statement),
-             "hmset turn/oauth/kid/%s ikm_key %s as_rs_alg %s timestamp %llu lifetime %lu realm %s", key->kid,
-             key->ikm_key, key->as_rs_alg, (unsigned long long)key->timestamp, (unsigned long)key->lifetime,
-             key->realm);
-    turnFreeRedisReply(redisCommand(rc, statement));
+    turnFreeRedisReply(redisCommand(
+        rc, "hmset turn/oauth/kid/%s ikm_key %s as_rs_alg %s timestamp %llu lifetime %lu realm %s", key->kid,
+        key->ikm_key, key->as_rs_alg, (unsigned long long)key->timestamp, (unsigned long)key->lifetime, key->realm));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -542,12 +562,7 @@ static int redis_del_user(uint8_t *usname, uint8_t *realm) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char statement[TURN_LONG_STRING_SIZE];
-    {
-      snprintf(statement, sizeof(statement), "del turn/realm/%s/user/%s/key", (char *)realm, usname);
-      turnFreeRedisReply(redisCommand(rc, statement));
-    }
-
+    turnFreeRedisReply(redisCommand(rc, "del turn/realm/%s/user/%s/key", (char *)realm, (char *)usname));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -558,9 +573,7 @@ static int redis_del_oauth_key(const uint8_t *kid) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char statement[TURN_LONG_STRING_SIZE];
-    snprintf(statement, sizeof(statement), "del turn/oauth/kid/%s", (const char *)kid);
-    turnFreeRedisReply(redisCommand(rc, statement));
+    turnFreeRedisReply(redisCommand(rc, "del turn/oauth/kid/%s", (const char *)kid));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -572,8 +585,9 @@ static int redis_list_users(uint8_t *realm, secrets_list_t *users, secrets_list_
   redisContext *rc = get_redis_connection();
 
   uint8_t realm0[STUN_MAX_REALM_SIZE + 1] = "\0";
-  if (!realm)
+  if (!realm) {
     realm = realm0;
+  }
 
   if (rc) {
     secrets_list_t keys;
@@ -592,11 +606,12 @@ static int redis_list_users(uint8_t *realm, secrets_list_t *users, secrets_list_
 
       if (reply) {
 
-        if (reply->type == REDIS_REPLY_ERROR)
+        if (reply->type == REDIS_REPLY_ERROR) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-        else if (reply->type != REDIS_REPLY_ARRAY) {
-          if (reply->type != REDIS_REPLY_NIL)
+        } else if (reply->type != REDIS_REPLY_ARRAY) {
+          if (reply->type != REDIS_REPLY_NIL) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+          }
         } else {
           size_t i;
           for (i = 0; i < reply->elements; ++i) {
@@ -614,23 +629,27 @@ static int redis_list_users(uint8_t *realm, secrets_list_t *users, secrets_list_
       char *s = keys.secrets[isz];
 
       char *sh = strstr(s, "turn/realm/");
-      if (sh != s)
+      if (sh != s) {
         continue;
+      }
       sh += rhsz;
       char *st = strchr(sh, '/');
-      if (!st)
+      if (!st) {
         continue;
+      }
       *st = 0;
       char *sr = sh;
       ++st;
 
       sh = strstr(st, "user/");
-      if (sh != st)
+      if (sh != st) {
         continue;
+      }
       sh += uhsz;
       st = strchr(sh, '/');
-      if (!st)
+      if (!st) {
         continue;
+      }
       *st = 0;
       char *su = sh;
 
@@ -718,8 +737,9 @@ static int redis_list_secrets(uint8_t *realm, secrets_list_t *secrets, secrets_l
   int ret = -1;
 
   uint8_t realm0[STUN_MAX_REALM_SIZE + 1] = "\0";
-  if (!realm)
+  if (!realm) {
     realm = realm0;
+  }
 
   donot_print_connection_success = 1;
   redisContext *rc = get_redis_connection();
@@ -733,15 +753,14 @@ static int redis_list_secrets(uint8_t *realm, secrets_list_t *secrets, secrets_l
     if (reply) {
       secrets_list_t keys;
       size_t isz = 0;
-      char s[257];
-
       init_secrets_list(&keys);
 
-      if (reply->type == REDIS_REPLY_ERROR)
+      if (reply->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-      else if (reply->type != REDIS_REPLY_ARRAY) {
-        if (reply->type != REDIS_REPLY_NIL)
+      } else if (reply->type != REDIS_REPLY_ARRAY) {
+        if (reply->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+        }
       } else {
         size_t i;
         for (i = 0; i < reply->elements; ++i) {
@@ -752,27 +771,29 @@ static int redis_list_secrets(uint8_t *realm, secrets_list_t *secrets, secrets_l
       size_t rhsz = strlen("turn/realm/");
 
       for (isz = 0; isz < keys.sz; ++isz) {
-        snprintf(s, sizeof(s), "smembers %s", keys.secrets[isz]);
-        redisReply *rget = (redisReply *)redisCommand(rc, s);
+        redisReply *rget = (redisReply *)redisCommand(rc, "smembers %s", keys.secrets[isz]);
         if (rget) {
           if (rget->type == REDIS_REPLY_ERROR) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", rget->str);
           } else if (rget->type == REDIS_REPLY_STRING) {
             printf("%s\n", rget->str);
           } else if (rget->type != REDIS_REPLY_ARRAY) {
-            if (rget->type != REDIS_REPLY_NIL)
+            if (rget->type != REDIS_REPLY_NIL) {
               TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", rget->type);
+            }
           } else {
 
             char *s = keys.secrets[isz];
 
             char *sh = strstr(s, "turn/realm/");
-            if (sh != s)
+            if (sh != s) {
               continue;
+            }
             sh += rhsz;
             char *st = strchr(sh, '/');
-            if (!st)
+            if (!st) {
               continue;
+            }
             *st = 0;
             const char *rval = sh;
 
@@ -823,13 +844,8 @@ static int redis_set_secret(uint8_t *secret, uint8_t *realm) {
   donot_print_connection_success = 1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
-
     redis_del_secret(secret, realm);
-
-    snprintf(s, sizeof(s), "sadd turn/realm/%s/secret %s", (char *)realm, secret);
-
-    turnFreeRedisReply(redisCommand(rc, s));
+    turnFreeRedisReply(redisCommand(rc, "sadd turn/realm/%s/secret %s", (char *)realm, (char *)secret));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -840,22 +856,19 @@ static int redis_set_permission_ip(const char *kind, uint8_t *realm, const char 
   int ret = -1;
 
   uint8_t realm0[STUN_MAX_REALM_SIZE + 1] = "\0";
-  if (!realm)
+  if (!realm) {
     realm = realm0;
+  }
 
   donot_print_connection_success = 1;
 
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
-
     if (del) {
-      snprintf(s, sizeof(s), "srem turn/realm/%s/%s-peer-ip %s", (char *)realm, kind, ip);
+      turnFreeRedisReply(redisCommand(rc, "srem turn/realm/%s/%s-peer-ip %s", (char *)realm, kind, ip));
     } else {
-      snprintf(s, sizeof(s), "sadd turn/realm/%s/%s-peer-ip %s", (char *)realm, kind, ip);
+      turnFreeRedisReply(redisCommand(rc, "sadd turn/realm/%s/%s-peer-ip %s", (char *)realm, kind, ip));
     }
-
-    turnFreeRedisReply(redisCommand(rc, s));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -866,11 +879,7 @@ static int redis_add_origin(uint8_t *origin, uint8_t *realm) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
-
-    snprintf(s, sizeof(s), "set turn/origin/%s %s", (char *)origin, (char *)realm);
-
-    turnFreeRedisReply(redisCommand(rc, s));
+    turnFreeRedisReply(redisCommand(rc, "set turn/origin/%s %s", (char *)origin, (char *)realm));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -881,11 +890,7 @@ static int redis_del_origin(uint8_t *origin) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
-
-    snprintf(s, sizeof(s), "del turn/origin/%s", (char *)origin);
-
-    turnFreeRedisReply(redisCommand(rc, s));
+    turnFreeRedisReply(redisCommand(rc, "del turn/origin/%s", (char *)origin));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -896,8 +901,9 @@ static int redis_list_origins(uint8_t *realm, secrets_list_t *origins, secrets_l
   int ret = -1;
 
   uint8_t realm0[STUN_MAX_REALM_SIZE + 1] = "\0";
-  if (!realm)
+  if (!realm) {
     realm = realm0;
+  }
 
   donot_print_connection_success = 1;
 
@@ -914,11 +920,12 @@ static int redis_list_origins(uint8_t *realm, secrets_list_t *origins, secrets_l
       reply = (redisReply *)redisCommand(rc, "keys turn/origin/*");
       if (reply) {
 
-        if (reply->type == REDIS_REPLY_ERROR)
+        if (reply->type == REDIS_REPLY_ERROR) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-        else if (reply->type != REDIS_REPLY_ARRAY) {
-          if (reply->type != REDIS_REPLY_NIL)
+        } else if (reply->type != REDIS_REPLY_ARRAY) {
+          if (reply->type != REDIS_REPLY_NIL) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+          }
         } else {
           size_t i;
           size_t offset = strlen("turn/origin/");
@@ -937,11 +944,12 @@ static int redis_list_origins(uint8_t *realm, secrets_list_t *origins, secrets_l
       reply = (redisReply *)redisCommand(rc, "get turn/origin/%s", o);
       if (reply) {
 
-        if (reply->type == REDIS_REPLY_ERROR)
+        if (reply->type == REDIS_REPLY_ERROR) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-        else if (reply->type != REDIS_REPLY_STRING) {
-          if (reply->type != REDIS_REPLY_NIL)
+        } else if (reply->type != REDIS_REPLY_STRING) {
+          if (reply->type != REDIS_REPLY_NIL) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+          }
         } else {
           if (!(realm && realm[0] && strcmp((char *)realm, reply->str))) {
             if (origins) {
@@ -968,14 +976,11 @@ static int redis_set_realm_option_one(uint8_t *realm, unsigned long value, const
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
-
-    if (value > 0)
-      snprintf(s, sizeof(s), "set turn/realm/%s/%s %lu", (char *)realm, opt, (unsigned long)value);
-    else
-      snprintf(s, sizeof(s), "del turn/realm/%s/%s", (char *)realm, opt);
-
-    turnFreeRedisReply(redisCommand(rc, s));
+    if (value > 0) {
+      turnFreeRedisReply(redisCommand(rc, "set turn/realm/%s/%s %lu", (char *)realm, opt, (unsigned long)value));
+    } else {
+      turnFreeRedisReply(redisCommand(rc, "del turn/realm/%s/%s", (char *)realm, opt));
+    }
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -1002,11 +1007,12 @@ static int redis_list_realm_options(uint8_t *realm) {
       }
       if (reply) {
 
-        if (reply->type == REDIS_REPLY_ERROR)
+        if (reply->type == REDIS_REPLY_ERROR) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-        else if (reply->type != REDIS_REPLY_ARRAY) {
-          if (reply->type != REDIS_REPLY_NIL)
+        } else if (reply->type != REDIS_REPLY_ARRAY) {
+          if (reply->type != REDIS_REPLY_NIL) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+          }
         } else {
           size_t i;
           for (i = 0; i < reply->elements; ++i) {
@@ -1028,11 +1034,12 @@ static int redis_list_realm_options(uint8_t *realm) {
       reply = (redisReply *)redisCommand(rc, "get %s", o);
       if (reply) {
 
-        if (reply->type == REDIS_REPLY_ERROR)
+        if (reply->type == REDIS_REPLY_ERROR) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-        else if (reply->type != REDIS_REPLY_STRING) {
-          if (reply->type != REDIS_REPLY_NIL)
+        } else if (reply->type != REDIS_REPLY_STRING) {
+          if (reply->type != REDIS_REPLY_NIL) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+          }
         } else {
           printf("%s = %s\n", o + offset, reply->str);
         }
@@ -1058,23 +1065,21 @@ static int redis_get_ip_list(const char *kind, ip_range_list_t *list) {
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char statement[TURN_LONG_STRING_SIZE];
     const char *header = "turn/realm/";
     size_t header_len = strlen(header);
-    snprintf(statement, sizeof(statement), "keys %s*/%s-peer-ip", header, kind);
-    redisReply *reply = (redisReply *)redisCommand(rc, statement);
+    redisReply *reply = (redisReply *)redisCommand(rc, "keys %s*/%s-peer-ip", header, kind);
     if (reply) {
       secrets_list_t keys;
       size_t isz = 0;
-      char s[257];
 
       init_secrets_list(&keys);
 
-      if (reply->type == REDIS_REPLY_ERROR)
+      if (reply->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-      else if (reply->type != REDIS_REPLY_ARRAY) {
-        if (reply->type != REDIS_REPLY_NIL)
+      } else if (reply->type != REDIS_REPLY_ARRAY) {
+        if (reply->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+        }
       } else {
         size_t i;
         for (i = 0; i < reply->elements; ++i) {
@@ -1086,9 +1091,7 @@ static int redis_get_ip_list(const char *kind, ip_range_list_t *list) {
 
         char *realm = NULL;
 
-        snprintf(s, sizeof(s), "smembers %s", keys.secrets[isz]);
-
-        redisReply *rget = (redisReply *)redisCommand(rc, s);
+        redisReply *rget = (redisReply *)redisCommand(rc, "smembers %s", keys.secrets[isz]);
 
         char *ptr = ((char *)keys.secrets[isz]) + header_len;
         char *sep = strstr(ptr, "/");
@@ -1103,8 +1106,9 @@ static int redis_get_ip_list(const char *kind, ip_range_list_t *list) {
           } else if (rget->type == REDIS_REPLY_STRING) {
             add_ip_list_range(rget->str, realm, list);
           } else if (rget->type != REDIS_REPLY_ARRAY) {
-            if (rget->type != REDIS_REPLY_NIL)
+            if (rget->type != REDIS_REPLY_NIL) {
               TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", rget->type);
+            }
           } else {
             size_t i;
             for (i = 0; i < rget->elements; ++i) {
@@ -1143,13 +1147,12 @@ static void redis_reread_realms(secrets_list_t *realms_list) {
 
       size_t isz = 0;
 
-      char s[1025];
-
-      if (reply->type == REDIS_REPLY_ERROR)
+      if (reply->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-      else if (reply->type != REDIS_REPLY_ARRAY) {
-        if (reply->type != REDIS_REPLY_NIL)
+      } else if (reply->type != REDIS_REPLY_ARRAY) {
+        if (reply->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+        }
       } else {
         size_t i;
         for (i = 0; i < reply->elements; ++i) {
@@ -1161,14 +1164,14 @@ static void redis_reread_realms(secrets_list_t *realms_list) {
 
       for (isz = 0; isz < keys.sz; ++isz) {
         char *origin = keys.secrets[isz] + offset;
-        snprintf(s, sizeof(s), "get %s", keys.secrets[isz]);
-        redisReply *rget = (redisReply *)redisCommand(rc, s);
+        redisReply *rget = (redisReply *)redisCommand(rc, "get %s", keys.secrets[isz]);
         if (rget) {
-          if (rget->type == REDIS_REPLY_ERROR)
+          if (rget->type == REDIS_REPLY_ERROR) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", rget->str);
-          else if (rget->type != REDIS_REPLY_STRING) {
-            if (rget->type != REDIS_REPLY_NIL)
+          } else if (rget->type != REDIS_REPLY_STRING) {
+            if (rget->type != REDIS_REPLY_NIL) {
               TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", rget->type);
+            }
           } else {
             get_realm(rget->str);
             ur_string_map_value_type value = strdup(rget->str);
@@ -1237,17 +1240,16 @@ static int redis_get_admin_user(const uint8_t *usname, uint8_t *realm, password_
   int ret = -1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char s[TURN_LONG_STRING_SIZE];
     realm[0] = 0;
     pwd[0] = 0;
-    snprintf(s, sizeof(s), "hgetall turn/admin_user/%s", (const char *)usname);
-    redisReply *reply = (redisReply *)redisCommand(rc, s);
+    redisReply *reply = (redisReply *)redisCommand(rc, "hgetall turn/admin_user/%s", (const char *)usname);
     if (reply) {
-      if (reply->type == REDIS_REPLY_ERROR)
+      if (reply->type == REDIS_REPLY_ERROR) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Error: %s\n", reply->str);
-      else if (reply->type != REDIS_REPLY_ARRAY) {
-        if (reply->type != REDIS_REPLY_NIL)
+      } else if (reply->type != REDIS_REPLY_ARRAY) {
+        if (reply->type != REDIS_REPLY_NIL) {
           TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Unexpected type: %d\n", reply->type);
+        }
       } else if (reply->elements > 1) {
         size_t i;
         for (i = 0; i < (reply->elements) / 2; ++i) {
@@ -1256,8 +1258,10 @@ static int redis_get_admin_user(const uint8_t *usname, uint8_t *realm, password_
           if (kw) {
             if (!strcmp(kw, "realm")) {
               strncpy((char *)realm, val, STUN_MAX_REALM_SIZE);
+              realm[STUN_MAX_REALM_SIZE] = '\0';
             } else if (!strcmp(kw, "password")) {
               strncpy((char *)pwd, val, STUN_MAX_PWD_SIZE);
+              pwd[STUN_MAX_PWD_SIZE] = '\0';
               ret = 0;
             }
           }
@@ -1274,13 +1278,13 @@ static int redis_set_admin_user(const uint8_t *usname, const uint8_t *realm, con
   donot_print_connection_success = 1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char statement[TURN_LONG_STRING_SIZE];
     if (realm[0]) {
-      snprintf(statement, sizeof(statement), "hmset turn/admin_user/%s realm %s password %s", usname, realm, pwd);
+      turnFreeRedisReply(redisCommand(rc, "hmset turn/admin_user/%s realm %s password %s", (const char *)usname,
+                                      (const char *)realm, (const char *)pwd));
     } else {
-      snprintf(statement, sizeof(statement), "hmset turn/admin_user/%s password %s", usname, pwd);
+      turnFreeRedisReply(
+          redisCommand(rc, "hmset turn/admin_user/%s password %s", (const char *)usname, (const char *)pwd));
     }
-    turnFreeRedisReply(redisCommand(rc, statement));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -1292,9 +1296,7 @@ static int redis_del_admin_user(const uint8_t *usname) {
   donot_print_connection_success = 1;
   redisContext *rc = get_redis_connection();
   if (rc) {
-    char statement[TURN_LONG_STRING_SIZE];
-    snprintf(statement, sizeof(statement), "del turn/admin_user/%s", (const char *)usname);
-    turnFreeRedisReply(redisCommand(rc, statement));
+    turnFreeRedisReply(redisCommand(rc, "del turn/admin_user/%s", (const char *)usname));
     turnFreeRedisReply(redisCommand(rc, "save"));
     ret = 0;
   }
@@ -1366,14 +1368,15 @@ static void redis_disconnect(void) {
 
 //////////////////////////////////////////////////////
 
-static const turn_dbdriver_t driver = {
-    &redis_get_auth_secrets,   &redis_get_user_key,   &redis_set_user_key,   &redis_del_user,
-    &redis_list_users,         &redis_list_secrets,   &redis_del_secret,     &redis_set_secret,
-    &redis_add_origin,         &redis_del_origin,     &redis_list_origins,   &redis_set_realm_option_one,
-    &redis_list_realm_options, &redis_auth_ping,      &redis_get_ip_list,    &redis_set_permission_ip,
-    &redis_reread_realms,      &redis_set_oauth_key,  &redis_get_oauth_key,  &redis_del_oauth_key,
-    &redis_list_oauth_keys,    &redis_get_admin_user, &redis_set_admin_user, &redis_del_admin_user,
-    &redis_list_admin_users,   &redis_disconnect};
+static const turn_dbdriver_t driver = {&redis_get_auth_secrets,   &redis_get_user_key,   &redis_set_user_key,
+                                       &redis_del_user,           &redis_list_users,     &redis_list_secrets,
+                                       &redis_del_secret,         &redis_set_secret,     &redis_add_origin,
+                                       &redis_del_origin,         &redis_list_origins,   &redis_set_realm_option_one,
+                                       &redis_list_realm_options, &redis_auth_ping,      &redis_get_ip_list,
+                                       &redis_set_permission_ip,  &redis_reread_realms,  &redis_set_oauth_key,
+                                       &redis_get_oauth_key,      &redis_del_oauth_key,  &redis_list_oauth_keys,
+                                       &redis_get_admin_user,     &redis_set_admin_user, &redis_del_admin_user,
+                                       &redis_list_admin_users,   &redis_disconnect,     NULL};
 
 const turn_dbdriver_t *get_redis_dbdriver(void) { return &driver; }
 

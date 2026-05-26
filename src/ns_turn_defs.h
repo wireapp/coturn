@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -31,7 +35,7 @@
 #ifndef __IOADEFS__
 #define __IOADEFS__
 
-#define TURN_SERVER_VERSION "wireapp/4.6.2k"
+#define TURN_SERVER_VERSION "wireapp/4.12.0a"
 #define TURN_SERVER_VERSION_NAME "Gorst"
 #ifndef TURN_SERVER_BUILD_INFO
 #define TURN_SERVER_BUILD_INFO ""
@@ -42,7 +46,7 @@
 #include <sys/param.h>
 #endif
 
-#if defined(__APPLE__) || defined(__DARWIN__) || defined(__MACH__)
+#if defined(__APPLE__)
 #define __APPLE_USE_RFC_3542
 #endif
 
@@ -50,20 +54,21 @@
 #include <process.h>
 #include <ws2tcpip.h>
 #else
-#include <arpa/inet.h>
-#include <net/if.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <arpa/inet.h>   // IWYU pragma: export
+#include <net/if.h>      // IWYU pragma: export
+#include <netinet/in.h>  // IWYU pragma: export
+#include <netinet/tcp.h> // IWYU pragma: export
 #include <strings.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <sys/socket.h> // IWYU pragma: export
+#include <unistd.h>     // IWYU pragma: export
 #endif
 
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <stdarg.h>
-#include <stdint.h>
+#include <stddef.h> // IWYU pragma: export
+#include <stdint.h> // IWYU pragma: export
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -184,6 +189,7 @@ typedef uint32_t turn_time_t;
 #error WRONG BYTE_ORDER SETTING
 #endif
 
+// NOLINTBEGIN(clang-diagnostic-string-compare)
 #define STRCPY(dst, src)                                                                                               \
   do {                                                                                                                 \
     if ((const char *)(dst) != (const char *)(src)) {                                                                  \
@@ -196,6 +202,7 @@ typedef uint32_t turn_time_t;
       }                                                                                                                \
     }                                                                                                                  \
   } while (0)
+// NOLINTEND(clang-diagnostic-string-compare)
 
 //////////////// Bufferevents /////////////////////
 
@@ -219,7 +226,7 @@ typedef uint32_t turn_time_t;
 
 ////////////////////////////////////////////////////////
 
-#if !defined(IPPROTO_SCTP)
+#if !defined(IPPROTO_SCTP) && !defined(TURN_NO_SCTP)
 #define TURN_NO_SCTP
 #endif
 

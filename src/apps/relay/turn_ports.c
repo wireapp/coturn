@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -86,19 +90,21 @@ static int is_taken(uint32_t status) {
 
 static void turnports_randomize(turnports *tp) {
   if (tp) {
-    unsigned int size = (unsigned int)(tp->high - tp->low);
+    const unsigned int size = (unsigned int)(tp->high - tp->low);
     unsigned int i = 0;
-    unsigned int cycles = size * 10;
+    const unsigned int cycles = size * 10;
     for (i = 0; i < cycles; i++) {
-      uint16_t port1 = (uint16_t)(tp->low + (uint16_t)(((unsigned long)turn_random()) % ((unsigned long)size)));
-      uint16_t port2 = (uint16_t)(tp->low + (uint16_t)(((unsigned long)turn_random()) % ((unsigned long)size)));
+      const uint16_t port1 =
+          (uint16_t)(tp->low + (uint16_t)(((unsigned long)turn_random_number()) % ((unsigned long)size)));
+      const uint16_t port2 =
+          (uint16_t)(tp->low + (uint16_t)(((unsigned long)turn_random_number()) % ((unsigned long)size)));
       if (port1 != port2) {
-        int pos1 = tp->status[port1];
-        int pos2 = tp->status[port2];
-        int tmp = (int)tp->status[port1];
+        const uint32_t pos1 = tp->status[port1];
+        const uint32_t pos2 = tp->status[port2];
+        uint32_t tmp = tp->status[port1];
         tp->status[port1] = tp->status[port2];
-        tp->status[port2] = (uint32_t)tmp;
-        tmp = (int)tp->ports[pos1];
+        tp->status[port2] = tmp;
+        tmp = tp->ports[pos1];
         tp->ports[pos1] = tp->ports[pos2];
         tp->ports[pos2] = (uint16_t)tmp;
       }
@@ -137,8 +143,9 @@ static void turnports_init(turnports *tp, uint16_t start, uint16_t end) {
 
 turnports *turnports_create(super_memory_t *sm, uint16_t start, uint16_t end) {
 
-  if (start > end)
+  if (start > end) {
     return NULL;
+  }
 
   turnports *ret = (turnports *)allocate_super_memory_region(sm, sizeof(turnports));
   turnports_init(ret, start, end);
@@ -147,11 +154,11 @@ turnports *turnports_create(super_memory_t *sm, uint16_t start, uint16_t end) {
 }
 
 uint16_t turnports_size(turnports *tp) {
-  if (!tp)
+  if (!tp) {
     return 0;
-  else {
+  } else {
     TURN_MUTEX_LOCK(&tp->mutex);
-    uint16_t ret = (uint16_t)((tp->high - tp->low));
+    const uint16_t ret = (uint16_t)((tp->high - tp->low));
     TURN_MUTEX_UNLOCK(&tp->mutex);
     return ret;
   }
@@ -172,7 +179,7 @@ int turnports_allocate(turnports *tp) {
         return -1;
       }
 
-      int position = (uint16_t)(tp->low & 0x0000FFFF);
+      const int position = (uint16_t)(tp->low & 0x0000FFFF);
 
       port = (int)tp->ports[position];
       if (port < (int)(tp->range_start) || port > ((int)(tp->range_stop))) {
@@ -201,7 +208,7 @@ int turnports_allocate(turnports *tp) {
 void turnports_release(turnports *tp, uint16_t port) {
   TURN_MUTEX_LOCK(&tp->mutex);
   if (tp && port >= tp->range_start && port <= tp->range_stop) {
-    uint16_t position = (uint16_t)(tp->high & 0x0000FFFF);
+    const uint16_t position = (uint16_t)(tp->high & 0x0000FFFF);
     if (is_taken(tp->status[port])) {
       tp->status[port] = tp->high;
       tp->ports[position] = port;
@@ -212,53 +219,52 @@ void turnports_release(turnports *tp, uint16_t port) {
 }
 
 int turnports_allocate_even(turnports *tp, int allocate_rtcp, uint64_t *reservation_token) {
+  UNUSED_ARG(allocate_rtcp);
+
   if (tp) {
     TURN_MUTEX_LOCK(&tp->mutex);
-    uint16_t size = turnports_size(tp);
+    const uint16_t size = turnports_size(tp);
     if (size > 1) {
       uint16_t i = 0;
       for (i = 0; i < size; i++) {
-        int port = turnports_allocate(tp);
+        const int port = turnports_allocate(tp);
         if (port & 0x00000001) {
           turnports_release(tp, port);
         } else {
-          if (!allocate_rtcp) {
+          const int rtcp_port = port + 1;
+          if (rtcp_port > tp->range_stop) {
+            turnports_release(tp, port);
+          } else if (!turnports_is_available(tp, rtcp_port)) {
+            turnports_release(tp, port);
+          } else {
+            tp->status[port] = TPS_TAKEN_EVEN;
+            tp->status[rtcp_port] = TPS_TAKEN_ODD;
+            if (reservation_token) {
+              uint16_t *v16 = (uint16_t *)reservation_token;
+              uint32_t *v32 = (uint32_t *)reservation_token;
+              v16[0] = (uint16_t)(tp->ports[(uint16_t)(tp->low & 0x0000FFFF)]);
+              v16[1] = (uint16_t)(tp->ports[(uint16_t)(tp->high & 0x0000FFFF)]);
+              v32[1] = (uint32_t)turn_random_number();
+            }
             TURN_MUTEX_UNLOCK(&tp->mutex);
             return port;
-          } else {
-            int rtcp_port = port + 1;
-            if (rtcp_port > tp->range_stop) {
-              turnports_release(tp, port);
-            } else if (!turnports_is_available(tp, rtcp_port)) {
-              turnports_release(tp, port);
-            } else {
-              tp->status[port] = TPS_TAKEN_EVEN;
-              tp->status[rtcp_port] = TPS_TAKEN_ODD;
-              if (reservation_token) {
-                uint16_t *v16 = (uint16_t *)reservation_token;
-                uint32_t *v32 = (uint32_t *)reservation_token;
-                v16[0] = (uint16_t)(tp->ports[(uint16_t)(tp->low & 0x0000FFFF)]);
-                v16[1] = (uint16_t)(tp->ports[(uint16_t)(tp->high & 0x0000FFFF)]);
-                v32[1] = (uint32_t)turn_random();
-              }
-              TURN_MUTEX_UNLOCK(&tp->mutex);
-              return port;
-            }
           }
         }
       }
     }
-    TURN_MUTEX_UNLOCK(&tp->mutex);
   }
+
+  TURN_MUTEX_UNLOCK(&tp->mutex);
+
   return -1;
 }
 
 int turnports_is_allocated(turnports *tp, uint16_t port) {
-  if (!tp)
+  if (!tp) {
     return 0;
-  else {
+  } else {
     TURN_MUTEX_LOCK(&tp->mutex);
-    int ret = is_taken(tp->status[port]);
+    const int ret = is_taken(tp->status[port]);
     TURN_MUTEX_UNLOCK(&tp->mutex);
     return ret;
   }
@@ -267,9 +273,9 @@ int turnports_is_allocated(turnports *tp, uint16_t port) {
 int turnports_is_available(turnports *tp, uint16_t port) {
   if (tp) {
     TURN_MUTEX_LOCK(&tp->mutex);
-    uint32_t status = tp->status[port];
+    const uint32_t status = tp->status[port];
     if ((status != TPS_OUT_OF_RANGE) && !is_taken(status)) {
-      uint16_t position = (uint16_t)(status & 0x0000FFFF);
+      const uint16_t position = (uint16_t)(status & 0x0000FFFF);
       if (tp->ports[position] == port) {
         TURN_MUTEX_UNLOCK(&tp->mutex);
         return 1;
@@ -294,8 +300,9 @@ struct _turnipports {
 //////////////////////////////////////////////////
 
 static ur_addr_map *get_map(turnipports *tp, uint8_t transport) {
-  if (transport == STUN_ATTRIBUTE_TRANSPORT_TCP_VALUE)
+  if (transport == STUN_ATTRIBUTE_TRANSPORT_TCP_VALUE) {
     return &(tp->ip_to_turnports_tcp);
+  }
   return &(tp->ip_to_turnports_udp);
 }
 //////////////////////////////////////////////////

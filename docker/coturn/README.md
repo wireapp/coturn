@@ -15,8 +15,8 @@ Coturn TURN server Docker image
 
 ## Supported tags and respective `Dockerfile` links
 
-- [`4.6.2-r0`, `4.6.2-r0-debian`, `4.6.2`, `4.6.2-debian`, `4.6`, `4.6-debian`, `4`, `4-debian`, `debian`, `latest`][d1]
-- [`4.6.2-r0-alpine`, `4.6.2-alpine`, `4.6-alpine`, `4-alpine`, `alpine`][d2]
+- [`4.11.0-r0`, `4.11.0-r0-debian`, `4.11.0`, `4.11.0-debian`, `4.11.0-trixie`, `4.11`, `4.11-debian`, `4.11-trixie`, `4`, `4-debian`, `4-trixie`, `debian`, `trixie`, `latest`][d1]
+- [`4.11.0-r0-alpine`, `4.11.0-alpine`, `4.11.0-alpine3.23`, `4.11-alpine`, `4.11-alpine3.23`, `4-alpine`, `4-alpine3.23`, `alpine`, `alpine3.23`][d2]
 
 
 
@@ -80,8 +80,7 @@ By default, default Coturn configuration and CLI options provided in the `CMD` [
                -n --log-file=stdout \
                --min-port=49160 --max-port=49200 \
                --lt-cred-mech --fingerprint \
-               --no-multicast-peers --no-cli \
-               --no-tlsv1 --no-tlsv1_1 \
+               --no-multicast-peers \
                --realm=my.realm.org \  
     ```
     
@@ -96,7 +95,7 @@ By default, default Coturn configuration and CLI options provided in the `CMD` [
 #### Automatic detection of external IP
 
 `detect-external-ip` binary may be used to automatically detect external IP of TURN server in runtime.
-To add ` --external-ip=<detected external IP>` using `detect-external-ip` as argument for `turnserver`, set envronment variable `DETECT_EXTERNAL_IP`. Also, environment variables `DETECT_RELAY_IP`, `DETECT_EXTERNAL_IPV6` and `DETECT_RELAY_IPV6` can be used for adding arugments ` --external-ip=<detected external IP>` or ` --relay-ip=<detected external IP>`.
+To add ` --external-ip=<detected external IP>` using `detect-external-ip` as argument for `turnserver`, set envronment variable `DETECT_EXTERNAL_IP`. Also, environment variables `DETECT_RELAY_IP`, `DETECT_EXTERNAL_IPV6` and `DETECT_RELAY_IPV6` can be used for adding arguments ` --external-ip=<detected external IP>` or ` --relay-ip=<detected external IP>`.
 It's okay to use it multiple times (the value will be evaluated only once).
 ```bash
 docker run -d --network=host \

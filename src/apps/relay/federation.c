@@ -347,22 +347,12 @@ static const char *cipherlist =
 static SSL_CTX* federation_setup_dtls_ctx(int isClient) {
   SSL_CTX* ssl_ctx = NULL;
 
-#if DTLSv1_2_SUPPORTED
-#if OPENSSL_VERSION_NUMBER < 0x10100000L // before openssl-1.1.0 no version independent API
-  set_ctx_ex(&ssl_ctx,"Federation-DTLS", 
-             isClient == 0 ? DTLSv1_2_server_method() : DTLSv1_2_client_method(), 
-             turn_params.federation_cert_file, 
-             turn_params.federation_pkey_file, 
-             turn_params.federation_pkey_pwd);
-  SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_DTLSv1);
-#else  // newer than 1.1.0
   set_ctx_ex(&ssl_ctx,"Federation-DTLS", 
              isClient == 0 ? DTLS_server_method() : DTLS_client_method(), 
              turn_params.federation_cert_file, 
              turn_params.federation_pkey_file, 
              turn_params.federation_pkey_pwd);
   SSL_CTX_set_min_proto_version(ssl_ctx, DTLS1_2_VERSION);
-#endif 
 
   SSL_CTX_set_cipher_list(ssl_ctx, cipherlist);
   
@@ -380,12 +370,6 @@ static SSL_CTX* federation_setup_dtls_ctx(int isClient) {
 
   SSL_CTX_set_cookie_generate_cb(ssl_ctx, generate_cookie);
   SSL_CTX_set_cookie_verify_cb(ssl_ctx, verify_cookie);  
-
-#else // DTLSv1_2_SUPPORTED
-  TURN_LOG_FUNC(
-      TURN_LOG_LEVEL_WARNING,
-      "WARNING: TURN Server was compiled with rather old OpenSSL version, DTLS federation won't work correctly.\n");
-#endif
 
   return ssl_ctx;
 }

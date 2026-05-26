@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -41,7 +45,18 @@ void err(int eval, const char *format, ...);
 #endif
 #endif
 
+#include "ns_turn_defs.h" // for turn_time_t
 #include "ns_turn_ioaddr.h"
+
+#if defined(WINDOWS)
+#include <stdint.h>
+#else
+#include <stdatomic.h>
+#endif
+
+#ifdef __cplusplus
+#include <algorithm> // for std::min
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,7 +86,7 @@ void set_syslog_facility(char *val);
 
 void set_turn_log_timestamp_format(char *new_format);
 
-void turn_log_func_default(char *file, int line, TURN_LOG_LEVEL level, const char *format, ...)
+void turn_log_func_default(const char *file, int line, TURN_LOG_LEVEL level, const char *format, ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif
@@ -80,8 +95,15 @@ void turn_log_func_default(char *file, int line, TURN_LOG_LEVEL level, const cha
 void addr_debug_print(int verbose, const ioa_addr *addr, const char *s);
 
 /* Log */
-extern volatile int _log_time_value_set;
-extern volatile turn_time_t _log_time_value;
+#if defined(WINDOWS)
+extern volatile uint32_t _log_time_value;
+#define LOAD_LOG_TIME() (_log_time_value)
+#define STORE_LOG_TIME(v) (_log_time_value = (v))
+#else
+extern _Atomic uint32_t _log_time_value;
+#define LOAD_LOG_TIME() atomic_load_explicit(&_log_time_value, memory_order_relaxed)
+#define STORE_LOG_TIME(v) atomic_store_explicit(&_log_time_value, (v), memory_order_relaxed)
+#endif
 extern int use_new_log_timestamp_format;
 
 void rtpprintf(const char *format, ...);
@@ -98,6 +120,13 @@ int is_secure_string(const uint8_t *string, int sanitizesql);
 
 #ifdef __cplusplus
 }
+#endif
+
+// Make sure that we don't try to pull std::min into the extern-c block.
+#if defined(__cplusplus)
+using std::min;
+#elif !defined(min)
+#define min(a, b) ((a) <= (b) ? (a) : (b))
 #endif
 
 #endif //__TURN_ULIB__

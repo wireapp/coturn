@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -123,7 +127,7 @@ struct _ts_ur_super_session {
 
 ////// Session info for statistics //////
 
-#define TURN_ADDR_STR_SIZE (65)
+#define TURN_ADDR_STR_SIZE (64)
 #define TURN_MAIN_PEERS_ARRAY_SIZE (5)
 
 typedef struct _addr_data {
@@ -175,7 +179,6 @@ struct turn_session_info {
   band_limit_t bps;
 };
 
-void turn_session_info_init(struct turn_session_info *tsi);
 void turn_session_info_clean(struct turn_session_info *tsi);
 void turn_session_info_add_peer(struct turn_session_info *tsi, ioa_addr *peer);
 

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -28,6 +32,9 @@
  * SUCH DAMAGE.
  */
 
+#include <limits.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,52 +64,56 @@ static int counter = 0;
 
 #ifdef __cplusplus
 
-static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, int response_port, int change_ip,
-                          int change_port, int padding) {
+static int run_stunclient(const char *rip, uint16_t rport, uint16_t *port, bool *rfc5780, int response_port,
+                          bool change_ip, bool change_port, int padding) {
 
   ioa_addr remote_addr;
-  int new_udp_fd = -1;
 
   memset((void *)&remote_addr, 0, sizeof(ioa_addr));
-  if (make_ioa_addr((const uint8_t *)rip, rport, &remote_addr) < 0)
-    err(-1, NULL);
+  if (make_ioa_addr((const uint8_t *)rip, rport, &remote_addr) < 0) {
+    err(-1, nullptr);
+  }
 
   if (udp_fd < 0) {
     udp_fd = socket(remote_addr.ss.sa_family, SOCK_DGRAM, 0);
-    if (udp_fd < 0)
-      err(-1, NULL);
+    if (udp_fd < 0) {
+      err(-1, nullptr);
+    }
 
     if (!addr_any(&real_local_addr)) {
-      if (addr_bind(udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0)
-        err(-1, NULL);
+      if (addr_bind(udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0) {
+        err(-1, nullptr);
+      }
     }
   }
 
-  if (response_port >= 0) {
-
+  int new_udp_fd = -1;
+  if (response_port >= 0 && response_port <= USHRT_MAX) {
     new_udp_fd = socket(remote_addr.ss.sa_family, SOCK_DGRAM, 0);
-    if (new_udp_fd < 0)
-      err(-1, NULL);
+    if (new_udp_fd < 0) {
+      err(-1, nullptr);
+    }
 
-    addr_set_port(&real_local_addr, response_port);
+    addr_set_port(&real_local_addr, (uint16_t)response_port);
 
-    if (addr_bind(new_udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0)
-      err(-1, NULL);
+    if (addr_bind(new_udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0) {
+      err(-1, nullptr);
+    }
   }
 
   turn::StunMsgRequest req(STUN_METHOD_BINDING);
 
   req.constructBindingRequest();
 
-  if (response_port >= 0) {
+  if (response_port >= 0 && response_port <= USHRT_MAX) {
     turn::StunAttrResponsePort rpa;
     rpa.setResponsePort((uint16_t)response_port);
     try {
       req.addAttr(rpa);
-    } catch (turn::WrongStunAttrFormatException &ex1) {
+    } catch (const turn::WrongStunAttrFormatException &ex1) {
       printf("Wrong rp attr format\n");
       exit(-1);
-    } catch (turn::WrongStunBufferFormatException &ex2) {
+    } catch (const turn::WrongStunBufferFormatException &ex2) {
       printf("Wrong stun buffer format (1)\n");
       exit(-1);
     } catch (...) {
@@ -116,10 +127,10 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
     cra.setChangePort(change_port);
     try {
       req.addAttr(cra);
-    } catch (turn::WrongStunAttrFormatException &ex1) {
+    } catch (const turn::WrongStunAttrFormatException &ex1) {
       printf("Wrong cr attr format\n");
       exit(-1);
-    } catch (turn::WrongStunBufferFormatException &ex2) {
+    } catch (const turn::WrongStunBufferFormatException &ex2) {
       printf("Wrong stun buffer format (2)\n");
       exit(-1);
     } catch (...) {
@@ -132,10 +143,10 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
     pa.setPadding(1500);
     try {
       req.addAttr(pa);
-    } catch (turn::WrongStunAttrFormatException &ex1) {
+    } catch (const turn::WrongStunAttrFormatException &ex1) {
       printf("Wrong p attr format\n");
       exit(-1);
-    } catch (turn::WrongStunBufferFormatException &ex2) {
+    } catch (const turn::WrongStunBufferFormatException &ex2) {
       printf("Wrong stun buffer format (3)\n");
       exit(-1);
     } catch (...) {
@@ -145,15 +156,16 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
   }
 
   {
-    int len = 0;
-    int slen = get_ioa_addr_len(&remote_addr);
+    const int len = 0;
+    const ssize_t slen = get_ioa_addr_len(&remote_addr);
 
     do {
       len = sendto(udp_fd, req.getRawBuffer(), req.getSize(), 0, (struct sockaddr *)&remote_addr, (socklen_t)slen);
     } while (len < 0 && (socket_eintr() || socket_enobufs() || socket_eagain()));
 
-    if (len < 0)
+    if (len < 0) {
       err(-1, NULL);
+    }
   }
 
   if (addr_get_from_sock(udp_fd, &real_local_addr) < 0) {
@@ -162,32 +174,28 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
     *port = addr_get_port(&real_local_addr);
   }
 
-  {
-    if (new_udp_fd >= 0) {
-      socket_closesocket(udp_fd);
-      udp_fd = new_udp_fd;
-      new_udp_fd = -1;
-    }
+  if (new_udp_fd >= 0) {
+    socket_closesocket(udp_fd);
+    udp_fd = new_udp_fd;
   }
 
   {
-    int len = 0;
+    ssize_t len = 0;
     stun_buffer buf;
-    uint8_t *ptr = buf.buf;
     int recvd = 0;
     const int to_recv = sizeof(buf.buf);
 
     do {
-      len = recv(udp_fd, ptr, to_recv - recvd, 0);
+      len = recv(udp_fd, buf.buf, to_recv - recvd, 0);
       if (len > 0) {
         recvd += len;
-        ptr += len;
         break;
       }
     } while (len < 0 && socket_eintr());
 
-    if (recvd > 0)
+    if (recvd > 0) {
       len = recvd;
+    }
     buf.len = len;
 
     try {
@@ -212,12 +220,12 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
                 *rfc5780 = 1;
                 printf("\n========================================\n");
                 printf("RFC 5780 response %d\n", ++counter);
-                ioa_addr other_addr;
+                const ioa_addr other_addr;
                 turn::StunAttrAddr addr1(iter1);
                 addr1.getAddr(other_addr);
                 turn::StunAttrIterator iter2(res, STUN_ATTRIBUTE_RESPONSE_ORIGIN);
                 if (!iter2.eof()) {
-                  ioa_addr response_origin;
+                  const ioa_addr response_origin;
                   turn::StunAttrAddr addr2(iter2);
                   addr2.getAddr(response_origin);
                   addr_debug_print(1, &response_origin, "Response origin: ");
@@ -249,66 +257,71 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
   return 0;
 }
 
-#else
+#else  // ifdef __cplusplus
 
-static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, int response_port, int change_ip,
-                          int change_port, int padding) {
+static int run_stunclient(const char *rip, uint16_t rport, uint16_t *port, bool *rfc5780, int response_port,
+                          bool change_ip, bool change_port, int padding) {
 
   ioa_addr remote_addr;
-  int new_udp_fd = -1;
   stun_buffer buf;
 
   memset(&remote_addr, 0, sizeof(remote_addr));
-  if (make_ioa_addr((const uint8_t *)rip, rport, &remote_addr) < 0)
+  if (make_ioa_addr((const uint8_t *)rip, rport, &remote_addr) < 0) {
     err(-1, NULL);
+  }
 
+  int new_udp_fd = -1;
   if (udp_fd < 0) {
     udp_fd = socket(remote_addr.ss.sa_family, CLIENT_DGRAM_SOCKET_TYPE, CLIENT_DGRAM_SOCKET_PROTOCOL);
-    if (udp_fd < 0)
+    if (udp_fd < 0) {
       err(-1, NULL);
+    }
 
     if (!addr_any(&real_local_addr)) {
-      if (addr_bind(udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0)
+      if (addr_bind(udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0) {
         err(-1, NULL);
+      }
     }
   }
 
-  if (response_port >= 0) {
+  if (response_port >= 0 && response_port < USHRT_MAX) {
 
     new_udp_fd = socket(remote_addr.ss.sa_family, CLIENT_DGRAM_SOCKET_TYPE, CLIENT_DGRAM_SOCKET_PROTOCOL);
-    if (new_udp_fd < 0)
+    if (new_udp_fd < 0) {
       err(-1, NULL);
+    }
 
-    addr_set_port(&real_local_addr, response_port);
+    addr_set_port(&real_local_addr, (uint16_t)response_port);
 
-    if (addr_bind(new_udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0)
+    if (addr_bind(new_udp_fd, &real_local_addr, 0, 1, UDP_SOCKET) < 0) {
       err(-1, NULL);
+    }
   }
 
   stun_prepare_binding_request(&buf);
 
-  if (response_port >= 0) {
+  if (response_port >= 0 && response_port <= USHRT_MAX) {
     stun_attr_add_response_port_str((uint8_t *)(buf.buf), (size_t *)&(buf.len), (uint16_t)response_port);
   }
   if (change_ip || change_port) {
     stun_attr_add_change_request_str((uint8_t *)buf.buf, (size_t *)&(buf.len), change_ip, change_port);
   }
-  if (padding) {
-    if (stun_attr_add_padding_str((uint8_t *)buf.buf, (size_t *)&(buf.len), 1500) < 0) {
-      printf("%s: ERROR: Cannot add padding\n", __FUNCTION__);
-    }
+
+  if (padding && !stun_attr_add_padding_str((uint8_t *)buf.buf, (size_t *)&(buf.len), 1500)) {
+    printf("%s: ERROR: Cannot add padding\n", __FUNCTION__);
   }
 
   {
-    int len = 0;
-    int slen = get_ioa_addr_len(&remote_addr);
+    ssize_t len = 0;
+    uint32_t slen = get_ioa_addr_len(&remote_addr);
 
     do {
       len = sendto(udp_fd, buf.buf, buf.len, 0, (struct sockaddr *)&remote_addr, (socklen_t)slen);
     } while (len < 0 && (socket_eintr() || socket_enobufs() || socket_eagain()));
 
-    if (len < 0)
+    if (len < 0) {
       err(-1, NULL);
+    }
   }
 
   if (addr_get_from_sock(udp_fd, &real_local_addr) < 0) {
@@ -317,31 +330,27 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
     *port = addr_get_port(&real_local_addr);
   }
 
-  {
-    if (new_udp_fd >= 0) {
-      socket_closesocket(udp_fd);
-      udp_fd = new_udp_fd;
-      new_udp_fd = -1;
-    }
+  if (new_udp_fd >= 0) {
+    socket_closesocket(udp_fd);
+    udp_fd = new_udp_fd;
   }
 
   {
-    int len = 0;
-    uint8_t *ptr = buf.buf;
+    ssize_t len = 0;
     int recvd = 0;
     const int to_recv = sizeof(buf.buf);
 
     do {
-      len = recv(udp_fd, ptr, to_recv - recvd, 0);
+      len = recv(udp_fd, buf.buf, to_recv - recvd, 0);
       if (len > 0) {
         recvd += len;
-        ptr += len;
         break;
       }
     } while (len < 0 && (socket_eintr() || socket_eagain()));
 
-    if (recvd > 0)
+    if (recvd > 0) {
       len = recvd;
+    }
     buf.len = len;
 
     if (stun_is_command_message(&buf)) {
@@ -354,7 +363,7 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
 
             ioa_addr reflexive_addr;
             addr_set_any(&reflexive_addr);
-            if (stun_attr_get_first_addr(&buf, STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, &reflexive_addr, NULL) >= 0) {
+            if (stun_attr_get_first_addr(&buf, STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, &reflexive_addr, NULL)) {
 
               stun_attr_ref sar = stun_attr_get_first_by_type_str(buf.buf, buf.len, STUN_ATTRIBUTE_OTHER_ADDRESS);
               if (sar) {
@@ -399,7 +408,7 @@ static int run_stunclient(const char *rip, int rport, int *port, int *rfc5780, i
 
   return 0;
 }
-#endif
+#endif // ifdef __cplusplus
 
 //////////////// local definitions /////////////////
 
@@ -412,13 +421,14 @@ static char Usage[] = "Usage: stunclient [options] address\n"
 //////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
-  int port = DEFAULT_STUN_PORT;
+  uint16_t port = DEFAULT_STUN_PORT;
   char local_addr[256] = "\0";
   int c = 0;
-  int forceRfc5780 = 0;
+  bool forceRfc5780 = false;
 
-  if (socket_init())
+  if (socket_init()) {
     return -1;
+  }
 
   set_logfile("stdout");
   set_no_stdout_log(1);
@@ -456,8 +466,8 @@ int main(int argc, char **argv) {
     }
   }
 
-  int local_port = -1;
-  int rfc5780 = 0;
+  uint16_t local_port = 0;
+  bool rfc5780 = false;
 
   run_stunclient(argv[optind], port, &local_port, &rfc5780, -1, 0, 0, 0);
 

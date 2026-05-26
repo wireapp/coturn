@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -30,6 +34,7 @@
 
 #include "apputils.h"
 #include "mainrelay.h"
+#include <errno.h>
 
 #include "ns_turn_utils.h"
 
@@ -37,6 +42,7 @@
 #include "tls_listener.h"
 
 #include <event2/listener.h>
+#include <stdint.h>
 
 ///////////////////////////////////////////////////
 
@@ -85,12 +91,13 @@ static void server_input_handler(struct evconnlistener *l, evutil_socket_t fd, s
 
   SOCKET_TYPE st = TENTATIVE_TCP_SOCKET;
 
-  if (turn_params.tcp_use_proxy)
+  if (turn_params.tcp_use_proxy) {
     st = TCP_SOCKET_PROXY;
-  else if (turn_params.no_tls)
+  } else if (turn_params.no_tls) {
     st = TCP_SOCKET;
-  else if (turn_params.no_tcp)
+  } else if (turn_params.no_tcp) {
     st = TLS_SOCKET;
+  }
 
   ioa_socket_handle ioas = create_ioa_socket_from_fd(server->e, fd, NULL, st, CLIENT_SOCKET,
                                                      &(server->sm.m.sm.nd.src_addr), &(server->addr));
@@ -104,7 +111,7 @@ static void server_input_handler(struct evconnlistener *l, evutil_socket_t fd, s
     server->sm.m.sm.can_resume = 1;
     server->sm.relay_server = server->relay_server;
 
-    int rc = server->connect_cb(server->e, &(server->sm));
+    const int rc = server->connect_cb(server->e, &(server->sm));
 
     if (rc < 0) {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot create tcp or tls session\n");
@@ -143,10 +150,11 @@ static void sctp_server_input_handler(struct evconnlistener *l, evutil_socket_t 
 
   SOCKET_TYPE st = TENTATIVE_SCTP_SOCKET;
 
-  if (turn_params.no_tls)
+  if (turn_params.no_tls) {
     st = SCTP_SOCKET;
-  else if (turn_params.no_tcp)
+  } else if (turn_params.no_tcp) {
     st = TLS_SCTP_SOCKET;
+  }
 
   ioa_socket_handle ioas = create_ioa_socket_from_fd(server->e, fd, NULL, st, CLIENT_SOCKET,
                                                      &(server->sm.m.sm.nd.src_addr), &(server->addr));
@@ -159,6 +167,8 @@ static void sctp_server_input_handler(struct evconnlistener *l, evutil_socket_t 
     server->sm.m.sm.s = ioas;
     server->sm.m.sm.can_resume = 1;
     server->sm.relay_server = server->relay_server;
+
+    set_ioa_socket_buf_size(ioas, server->relay_server->server.sock_buf_size);
 
     int rc = server->connect_cb(server->e, &(server->sm));
 
@@ -181,14 +191,15 @@ static int create_server_listener(tls_listener_relay_server_type *server) {
 
   FUNCSTART;
 
-  if (!server)
+  if (!server) {
     return -1;
+  }
 
   evutil_socket_t tls_listen_fd = -1;
 
   tls_listen_fd = socket(server->addr.ss.sa_family, CLIENT_STREAM_SOCKET_TYPE, CLIENT_STREAM_SOCKET_PROTOCOL);
   if (tls_listen_fd < 0) {
-    perror("socket");
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "socket: %s\n", strerror(errno));
     return -1;
   }
 
@@ -202,9 +213,9 @@ static int create_server_listener(tls_listener_relay_server_type *server) {
   retry_addr_bind:
 
     if (addr_bind(tls_listen_fd, &server->addr, 1, 1, TCP_SOCKET) < 0) {
-      perror("Cannot bind local socket to addr");
-      char saddr[129];
-      addr_to_string(&server->addr, (uint8_t *)saddr);
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot bind local socket to addr: %s\n", strerror(errno));
+      char saddr[MAX_IOA_ADDR_STRING];
+      addr_to_string(&server->addr, saddr);
       TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "Cannot bind TLS/TCP listener socket to addr %s\n", saddr);
       if (addr_bind_cycle++ < max_binding_time) {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Trying to bind TLS/TCP listener socket to addr %s, again...\n", saddr);
@@ -230,12 +241,13 @@ static int create_server_listener(tls_listener_relay_server_type *server) {
     return -1;
   }
 
-  if (!turn_params.no_tcp && !turn_params.no_tls)
+  if (!turn_params.no_tcp && !turn_params.no_tls) {
     addr_debug_print(server->verbose, &server->addr, "TLS/TCP listener opened on ");
-  else if (!turn_params.no_tls)
+  } else if (!turn_params.no_tls) {
     addr_debug_print(server->verbose, &server->addr, "TLS listener opened on ");
-  else if (!turn_params.no_tcp)
+  } else if (!turn_params.no_tcp) {
     addr_debug_print(server->verbose, &server->addr, "TCP listener opened on ");
+  }
 
   FUNCEND;
 
@@ -248,8 +260,9 @@ static int sctp_create_server_listener(tls_listener_relay_server_type *server) {
 
   FUNCSTART;
 
-  if (!server)
+  if (!server) {
     return -1;
+  }
 
   evutil_socket_t tls_listen_fd = -1;
 
@@ -280,10 +293,11 @@ static int sctp_create_server_listener(tls_listener_relay_server_type *server) {
     return -1;
   }
 
-  if (!turn_params.no_tls)
+  if (!turn_params.no_tls) {
     addr_debug_print(server->verbose, &server->addr, "TLS/SCTP listener opened on ");
-  else
+  } else {
     addr_debug_print(server->verbose, &server->addr, "SCTP listener opened on ");
+  }
 
   FUNCEND;
 
@@ -292,18 +306,20 @@ static int sctp_create_server_listener(tls_listener_relay_server_type *server) {
 
 #endif
 
-static int init_server(tls_listener_relay_server_type *server, const char *ifname, const char *local_address, int port,
-                       int verbose, ioa_engine_handle e, ioa_engine_new_connection_event_handler send_socket,
-                       struct relay_server *relay_server) {
+static int init_server(tls_listener_relay_server_type *server, const char *ifname, const char *local_address,
+                       uint16_t port, int verbose, ioa_engine_handle e,
+                       ioa_engine_new_connection_event_handler send_socket, struct relay_server *relay_server) {
 
-  if (!server)
+  if (!server) {
     return -1;
+  }
 
   server->connect_cb = send_socket;
   server->relay_server = relay_server;
 
-  if (ifname)
+  if (ifname) {
     STRCPY(server->ifname, ifname);
+  }
 
   if (make_ioa_addr((const uint8_t *)local_address, port, &server->addr) < 0) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot create a TCP/TLS listener for address: %s\n", local_address);
@@ -323,7 +339,7 @@ static int init_server(tls_listener_relay_server_type *server, const char *ifnam
 
 ///////////////////////////////////////////////////////////
 
-tls_listener_relay_server_type *create_tls_listener_server(const char *ifname, const char *local_address, int port,
+tls_listener_relay_server_type *create_tls_listener_server(const char *ifname, const char *local_address, uint16_t port,
                                                            int verbose, ioa_engine_handle e,
                                                            ioa_engine_new_connection_event_handler send_socket,
                                                            struct relay_server *relay_server) {

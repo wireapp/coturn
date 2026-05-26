@@ -1,6 +1,38 @@
-# Author: Kang Lin <kl222@126.com>
+##
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# https://opensource.org/license/bsd-3-clause
+#
+# Copyright (C) 2021 Kang Lin <kl222@126.com>
+#
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the project nor the names of its contributors
+#    may be used to endorse or promote products derived from this software
+#    without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+##
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 
 project(coturn)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -9,9 +41,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
 # TODO: Modify this when the version is released
-SET(BUILD_VERSION "wireapp/4.6.2")
-
-option(FUZZER "Build oss-fuzz fuzzing" OFF)
+SET(BUILD_VERSION "wireapp/4.12.0")
 
 # Find Git Version Patch
 IF(EXISTS "${CMAKE_SOURCE_DIR}/.git")
@@ -56,6 +86,10 @@ if(DEFINED TURN_SERVER_BUILD_INFO)
     add_definitions(-DTURN_SERVER_BUILD_INFO=${TURN_SERVER_BUILD_INFO})
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_definitions(-D_GNU_SOURCE)
+endif()
+
 IF(MSVC)
     # This option is to enable the /MP switch for Visual Studio 2005 and above compilers
     OPTION(WIN32_USE_MP "Set to ON to build with the /MP option (Visual Studio 2005 and above)." ON)
@@ -81,6 +115,9 @@ if (BUILD_SHARED_LIBS)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif(BUILD_SHARED_LIBS)
 
+# Uncomment to disable OAuth support
+#add_definitions(-DTURN_NO_OAUTH)
+
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 include(GenerateExportHeader)
@@ -99,11 +136,6 @@ ADD_CUSTOM_TARGET(uninstall
     )
 
 add_subdirectory(src)
-
-OPTION(BUILD_TEST "Build test" OFF)
-if(BUILD_TEST)
-    add_subdirectory(test)
-endif(BUILD_TEST)
 
 CONFIGURE_FILE(
     "${CMAKE_SOURCE_DIR}/cmake/coturnConfig.cmake.in"
@@ -142,11 +174,18 @@ install(DIRECTORY
     )
 include(cmake/CMakeCPack.cmake)
 
+option(FUZZER "Build oss-fuzz fuzzing" OFF)
 if(FUZZER)
-    if (NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    if (NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
         message(FATAL_ERROR "clang is require for libFuzzer")
     endif()
 
     add_subdirectory(fuzzing)
 
+endif()
+
+option(BUILD_TESTING "Build unit tests" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
 endif()

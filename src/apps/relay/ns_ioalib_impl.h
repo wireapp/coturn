@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  * Copyright (C) 2022 Wire Swiss GmbH
  *
@@ -36,15 +40,10 @@
 #ifndef __IOA_LIBIMPL__
 #define __IOA_LIBIMPL__
 
-#include <event2/buffer.h>
-#include <event2/bufferevent.h>
-#include <event2/event.h>
-
-#include <event2/thread.h>
+#include "ns_turn_ioalib.h" // IWYU pragma: export
 
 #include "ns_turn_openssl.h"
 
-#include "ns_turn_ioalib.h"
 #include "ns_turn_maps.h"
 #include "ns_turn_maps_rtcp.h"
 #include "ns_turn_server.h"
@@ -56,6 +55,12 @@
 
 #include "ns_sm.h"
 
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
+#include <event2/event.h>
+
+#include <event2/thread.h>
+
 #include <pthread.h>
 
 #ifdef __cplusplus
@@ -66,10 +71,14 @@ extern "C" {
 
 #define MAX_BUFFER_QUEUE_SIZE_PER_ENGINE (64)
 #define MAX_SOCKET_BUFFER_BACKLOG (16)
+#define IOA_UDP_RECVMMSG_MAX_BATCH (16)
 
 #define BUFFEREVENT_HIGH_WATERMARK (128 << 10)
 #define BUFFEREVENT_MAX_UDP_TO_TCP_WRITE (64 << 9)
 #define BUFFEREVENT_MAX_TCP_TO_TCP_WRITE (192 << 10)
+
+typedef unsigned char recv_ttl_t;
+typedef unsigned char recv_tos_t;
 
 typedef struct _stun_buffer_list_elem {
   struct _stun_buffer_list_elem *next;
@@ -163,7 +172,26 @@ struct _ioa_engine {
   size_t relays_number;
   size_t relay_addr_counter;
   ioa_addr *relay_addrs;
+#if defined(__linux__)
+  struct ioa_socket_recvmmsg_state *udp_recvmmsg_state;
+  uint64_t udp_recvmmsg_calls;
+  uint64_t udp_recvmmsg_packets;
+  uint64_t udp_recvmmsg_wouldblock;
+  uint64_t udp_recvmmsg_unavailable;
+  uint64_t udp_recvmmsg_no_buffer;
+  uint64_t udp_recvmmsg_hist[IOA_UDP_RECVMMSG_MAX_BATCH + 1];
+  uint64_t udp_recvmmsg_last_report_calls;
+  turn_time_t udp_recvmmsg_last_report_time;
+#endif
   redis_context_handle rch;
+  /* multiplex-peer (zero-initialised = disabled) */
+  int mp_enabled;
+  int relay_thread_id;
+  ioa_socket_handle mp_sock_v4;
+  ioa_socket_handle mp_sock_v6;
+  uint16_t mp_port_v4;
+  uint16_t mp_port_v6;
+  ur_addr_map mp_table; /* peer_addr:port -> ts_ur_super_session*; O(1) get/put/del */
 };
 
 #define SOCKET_MAGIC (0xABACADEF)
@@ -244,6 +272,16 @@ typedef struct _timer_event {
 void create_default_realm(void);
 int get_realm_data(char *name, realm_params_t *rp);
 
+/* multiplex-peer */
+
+int init_multiplex_peer(ioa_engine_handle e, int thread_id, uint16_t base_port);
+int mp_register_peer(ioa_engine_handle e, const ioa_addr *peer_addr, void *turn_session);
+void mp_deregister_peer(ioa_engine_handle e, const ioa_addr *peer_addr, void *turn_session);
+void mp_deregister_permission_peers(ioa_engine_handle e, const ioa_addr *peer_addr, void *turn_session);
+void mp_deregister_session_peers(ioa_engine_handle e, void *turn_session, int address_family);
+ioa_socket_handle mp_get_socket(ioa_engine_handle e, int af);
+uint16_t mp_get_port(ioa_engine_handle e, int af);
+
 /* engine handling */
 
 ioa_engine_handle create_ioa_engine(super_memory_t *sm, struct event_base *eb, turnipports *tp, const char *relay_if,
@@ -275,10 +313,28 @@ int send_ssl_backlog_buffers(ioa_socket_handle s);
 
 int is_connreset(void);
 int would_block(void);
+void udp_sendmmsg_batch_begin(void);
+void udp_sendmmsg_batch_end(void);
 int udp_send(ioa_socket_handle s, const ioa_addr *dest_addr, const char *buffer, int len);
 int udp_recvfrom(evutil_socket_t fd, ioa_addr *orig_addr, const ioa_addr *like_addr, char *buffer, int buf_size,
                  int *ttl, int *tos, char *ecmsg, int flags, uint32_t *errcode);
 int ssl_read(evutil_socket_t fd, SSL *ssl, ioa_network_buffer_handle nbh, int verbose);
+
+#if defined(__linux__)
+void ioa_init_recvmmsg_hdr(struct mmsghdr *msg, struct iovec *iov, ioa_addr *src_addr, char *cmsg, size_t cmsg_len,
+                           socklen_t slen, void *buf, size_t len);
+#endif
+
+#if !defined(_MSC_VER) && defined(CMSG_SPACE)
+void ioa_parse_udp_recvmsg_cmsg(struct msghdr *msg, int *ttl, int *tos, uint32_t *errcode);
+#endif
+
+#if defined(__linux__)
+void ioa_engine_record_udp_recvmmsg_batch(ioa_engine_handle e, int rc);
+void ioa_engine_record_udp_recvmmsg_wouldblock(ioa_engine_handle e);
+void ioa_engine_record_udp_recvmmsg_unavailable(ioa_engine_handle e);
+void ioa_engine_record_udp_recvmmsg_no_buffer(ioa_engine_handle e);
+#endif
 
 int set_raw_socket_ttl_options(evutil_socket_t fd, int family);
 int set_raw_socket_tos_options(evutil_socket_t fd, int family);

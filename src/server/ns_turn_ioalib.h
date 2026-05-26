@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -35,7 +39,10 @@
 #ifndef __IOA_LIB__
 #define __IOA_LIB__
 
+#include "ns_turn_defs.h" // for turn_time_t
 #include "ns_turn_ioaddr.h"
+
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,10 +61,6 @@ typedef struct _tcp_connection tcp_connection;
 #define strtok_r strtok_s
 #endif
 
-#ifndef sleep
-#define sleep(t) Sleep(t * 1000)
-#endif
-
 #ifndef usleep
 #define usleep Sleep
 #endif
@@ -67,7 +70,13 @@ typedef struct _tcp_connection tcp_connection;
 typedef SSIZE_T ssize_t;
 #endif
 
+#endif // defined(_MSC_VER) || defined(__MINGW32__)
+
+#if defined(_MSC_VER) || defined(__MINGW32__)
+#ifndef sleep
+#define sleep(t) Sleep(t * 1000)
 #endif
+#endif // defined(_MSC_VER) || defined(__MINGW32__)
 
 ////////////// Mutexes /////////////////////
 
@@ -192,6 +201,7 @@ const ip_range_list_t *ioa_get_blacklist(ioa_engine_handle e);
  */
 ioa_network_buffer_handle ioa_network_buffer_allocate(ioa_engine_handle e);
 void ioa_network_buffer_header_init(ioa_network_buffer_handle nbh);
+void ioa_network_buffer_reset(ioa_network_buffer_handle nbh);
 uint8_t *ioa_network_buffer_data(ioa_network_buffer_handle nbh);
 size_t ioa_network_buffer_get_size(ioa_network_buffer_handle nbh);
 size_t ioa_network_buffer_get_capacity(ioa_network_buffer_handle nbh);
@@ -253,14 +263,14 @@ void inc_ioa_socket_ref_counter(ioa_socket_handle s);
 
 /* Relay socket handling */
 /*
- * event_port == -1: no rtcp;
- * event_port == 0: reserve rtcp;
+ * even_port == -1: no rtcp;
+ * even_port == 0: reserve rtcp;
  * even_port == +1: reserve and bind rtcp.
  */
 int create_relay_ioa_sockets(ioa_engine_handle e, ioa_socket_handle client_s, int address_family, uint8_t transport,
                              int even_port, ioa_socket_handle *rtp_s, ioa_socket_handle *rtcp_s,
                              uint64_t *out_reservation_token, int *err_code, const uint8_t **reason, accept_cb acb,
-                             void *acbarg);
+                             void *acbarg, bool multiplex_peer_mode);
 
 ioa_socket_handle ioa_create_connecting_tcp_relay_socket(ioa_socket_handle s, ioa_addr *peer_addr, connect_cb cb,
                                                          void *arg);
@@ -303,6 +313,7 @@ ioa_socket_handle detach_ioa_socket(ioa_socket_handle s);
 void detach_socket_net_data(ioa_socket_handle s);
 int set_df_on_ioa_socket(ioa_socket_handle s, int value);
 void set_do_not_use_df(ioa_socket_handle s);
+int set_ioa_socket_buf_size(ioa_socket_handle s, int sz);
 int ioa_socket_tobeclosed(ioa_socket_handle s);
 void set_ioa_socket_tobeclosed(ioa_socket_handle s);
 void close_ioa_socket_after_processing_if_necessary(ioa_socket_handle s);

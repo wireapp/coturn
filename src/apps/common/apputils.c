@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  *
  * All rights reserved.
@@ -38,8 +42,12 @@
 #if defined(__unix__) || defined(unix) || defined(__APPLE__)
 #include <getopt.h>
 #include <ifaddrs.h>
+#endif
+
+#if defined(__unix__) || defined(unix) || defined(__APPLE__) || defined(__MINGW32__)
 #include <libgen.h>
 #endif
+
 #if defined(__unix__) || defined(unix)
 #include <pthread.h>
 #include <sys/resource.h>
@@ -56,6 +64,7 @@
 #include <unistd.h>
 #endif
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,7 +91,7 @@ int socket_set_nonblocking(evutil_socket_t fd) {
   ioctlsocket(fd, FIONBIO, (unsigned long *)&nonblocking);
 #else
   if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
-    perror("O_NONBLOCK");
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "O_NONBLOCK: %s\n", strerror(errno));
     return -1;
   }
 #endif
@@ -106,7 +115,7 @@ int set_sock_buf_size(evutil_socket_t fd, int sz0) {
 
   sz = sz0;
   while (sz > 0) {
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (const void *)(&sz), (socklen_t)sizeof(sz)) < 0) {
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (const void *)&sz, (socklen_t)sizeof(sz)) < 0) {
       sz = sz / 2;
     } else {
       break;
@@ -114,13 +123,13 @@ int set_sock_buf_size(evutil_socket_t fd, int sz0) {
   }
 
   if (sz < 1) {
-    perror("Cannot set socket rcv size");
-    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Cannot set rcv sock size %d on fd %d\n", sz0, fd);
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot set receive sock size %d on fd %d. Error: %s\n", sz0, fd,
+                  strerror(errno));
   }
 
   sz = sz0;
   while (sz > 0) {
-    if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (const void *)(&sz), (socklen_t)sizeof(sz)) < 0) {
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (const void *)&sz, (socklen_t)sizeof(sz)) < 0) {
       sz = sz / 2;
     } else {
       break;
@@ -128,8 +137,8 @@ int set_sock_buf_size(evutil_socket_t fd, int sz0) {
   }
 
   if (sz < 1) {
-    perror("Cannot set socket snd size");
-    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Cannot set snd sock size %d on fd %d\n", sz0, fd);
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot set send socket size %d on fd %d. Error: %s\n", sz0, fd,
+                  strerror(errno));
   }
 
   return 0;
@@ -183,22 +192,23 @@ int socket_tcp_set_keepalive(evutil_socket_t fd, SOCKET_TYPE st) {
 int socket_set_reusable(evutil_socket_t fd, int flag, SOCKET_TYPE st) {
   UNUSED_ARG(st);
 
-  if (fd < 0)
+  if (fd < 0) {
     return -1;
-  else {
+  } else {
 
 #if defined(WINDOWS)
     int use_reuseaddr = IS_TURN_SERVER;
 #else
-    int use_reuseaddr = 1;
+    const int use_reuseaddr = 1;
 #endif
 
 #if defined(SO_REUSEADDR)
     if (use_reuseaddr) {
       int on = flag;
-      int ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&on, (socklen_t)sizeof(on));
-      if (ret < 0)
-        perror("SO_REUSEADDR");
+      const int ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&on, (socklen_t)sizeof(on));
+      if (ret < 0) {
+        TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "SO_REUSEADDR: %s\n", strerror(errno));
+      }
     }
 #endif
 
@@ -208,8 +218,9 @@ int socket_set_reusable(evutil_socket_t fd, int flag, SOCKET_TYPE st) {
       if (is_sctp_socket(st)) {
         int on = flag;
         int ret = setsockopt(fd, IPPROTO_SCTP, SCTP_REUSE_PORT, (const void *)&on, (socklen_t)sizeof(on));
-        if (ret < 0)
-          perror("SCTP_REUSE_PORT");
+        if (ret < 0) {
+          TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "SCTP_REUSE_PORT: %s\n", strerror(errno));
+        }
       }
     }
 #endif
@@ -237,11 +248,13 @@ int sock_bind_to_device(evutil_socket_t fd, const unsigned char *ifname) {
 
     strncpy(ifr.ifr_name, (const char *)ifname, sizeof(ifr.ifr_name));
 
-    if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-      if (socket_eperm())
-        perror("You must obtain superuser privileges to bind a socket to device");
-      else
-        perror("Cannot bind socket to device");
+    if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (const void *)&ifr, sizeof(ifr)) < 0) {
+      if (socket_eperm()) {
+        TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "You must obtain superuser privileges to bind a socket to device: %s\n",
+                      strerror(errno));
+      } else {
+        TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot bind socket to device: %s\n", strerror(errno));
+      }
 
       return -1;
     }
@@ -255,9 +268,9 @@ int sock_bind_to_device(evutil_socket_t fd, const unsigned char *ifname) {
 }
 
 int addr_connect(evutil_socket_t fd, const ioa_addr *addr, int *out_errno) {
-  if (!addr || fd < 0)
+  if (!addr || fd < 0) {
     return -1;
-  else {
+  } else {
     int err = 0;
     do {
       if (addr->ss.sa_family == AF_INET) {
@@ -269,11 +282,13 @@ int addr_connect(evutil_socket_t fd, const ioa_addr *addr, int *out_errno) {
       }
     } while (err < 0 && socket_eintr());
 
-    if (out_errno)
+    if (out_errno) {
       *out_errno = socket_errno();
+    }
 
-    if (err < 0 && !socket_einprogress())
-      perror("Connect");
+    if (err < 0 && !socket_einprogress()) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Connect: %s\n", strerror(errno));
+    }
 
     return err;
   }
@@ -296,7 +311,7 @@ int addr_bind(evutil_socket_t fd, const ioa_addr *addr, int reusable, int debug,
       } while (ret < 0 && socket_eintr());
     } else if (addr->ss.sa_family == AF_INET6) {
       const int off = 0;
-      setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof(off));
+      setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const void *)&off, sizeof(off));
       do {
         ret = bind(fd, (const struct sockaddr *)addr, sizeof(struct sockaddr_in6));
       } while (ret < 0 && socket_eintr());
@@ -305,11 +320,9 @@ int addr_bind(evutil_socket_t fd, const ioa_addr *addr, int reusable, int debug,
     }
     if (ret < 0) {
       if (debug) {
-        int err = socket_errno();
-        perror("bind");
-        char str[129];
-        addr_to_string(addr, (uint8_t *)str);
-        TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "Trying to bind fd %d to <%s>: errno=%d\n", fd, str, err);
+        char str[MAX_IOA_ADDR_STRING];
+        addr_to_string(addr, str);
+        TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "Trying to bind fd %d to <%s>: errno=%d\n", fd, str, socket_errno());
       }
     }
     return ret;
@@ -318,9 +331,9 @@ int addr_bind(evutil_socket_t fd, const ioa_addr *addr, int reusable, int debug,
 
 int addr_get_from_sock(evutil_socket_t fd, ioa_addr *addr) {
 
-  if (fd < 0 || !addr)
+  if (fd < 0 || !addr) {
     return -1;
-  else {
+  } else {
 
     ioa_addr a;
     a.ss.sa_family = AF_INET6;
@@ -350,8 +363,8 @@ int get_raw_socket_ttl(evutil_socket_t fd, int family) {
     } while (0);
 #else
     socklen_t slen = (socklen_t)sizeof(ttl);
-    if (getsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, &slen) < 0) {
-      perror("get HOPLIMIT on socket");
+    if (getsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (void *)&ttl, &slen) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "get HOPLIMIT on socket: %s\n", strerror(errno));
       return TTL_IGNORE;
     }
 #endif
@@ -363,8 +376,8 @@ int get_raw_socket_ttl(evutil_socket_t fd, int family) {
     } while (0);
 #else
     socklen_t slen = (socklen_t)sizeof(ttl);
-    if (getsockopt(fd, IPPROTO_IP, IP_TTL, &ttl, &slen) < 0) {
-      perror("get TTL on socket");
+    if (getsockopt(fd, IPPROTO_IP, IP_TTL, (void *)&ttl, &slen) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "get TTL on socket: %s\n", strerror(errno));
       return TTL_IGNORE;
     }
 #endif
@@ -386,8 +399,8 @@ int get_raw_socket_tos(evutil_socket_t fd, int family) {
     } while (0);
 #else
     socklen_t slen = (socklen_t)sizeof(tos);
-    if (getsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, &tos, &slen) < 0) {
-      perror("get TCLASS on socket");
+    if (getsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, (void *)&tos, &slen) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "get TCLASS on socket: %s\n", strerror(errno));
       return -1;
     }
 #endif
@@ -399,8 +412,8 @@ int get_raw_socket_tos(evutil_socket_t fd, int family) {
     } while (0);
 #else
     socklen_t slen = (socklen_t)sizeof(tos);
-    if (getsockopt(fd, IPPROTO_IP, IP_TOS, &tos, &slen) < 0) {
-      perror("get TOS on socket");
+    if (getsockopt(fd, IPPROTO_IP, IP_TOS, (void *)&tos, &slen) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "get TOS on socket: %s\n", strerror(errno));
       return -1;
     }
 #endif
@@ -419,8 +432,8 @@ int set_raw_socket_ttl(evutil_socket_t fd, int family, int ttl) {
     UNUSED_ARG(ttl);
 #else
     CORRECT_RAW_TTL(ttl);
-    if (setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, sizeof(ttl)) < 0) {
-      perror("set HOPLIMIT on socket");
+    if (setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const void *)&ttl, sizeof(ttl)) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "set HOPLIMIT on socket: %s\n", strerror(errno));
       return -1;
     }
 #endif
@@ -430,8 +443,8 @@ int set_raw_socket_ttl(evutil_socket_t fd, int family, int ttl) {
     UNUSED_ARG(ttl);
 #else
     CORRECT_RAW_TTL(ttl);
-    if (setsockopt(fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0) {
-      perror("set TTL on socket");
+    if (setsockopt(fd, IPPROTO_IP, IP_TTL, (const void *)&ttl, sizeof(ttl)) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "set TTL on socket: %s\n", strerror(errno));
       return -1;
     }
 #endif
@@ -448,8 +461,8 @@ int set_raw_socket_tos(evutil_socket_t fd, int family, int tos) {
     UNUSED_ARG(tos);
 #else
     CORRECT_RAW_TOS(tos);
-    if (setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, &tos, sizeof(tos)) < 0) {
-      perror("set TCLASS on socket");
+    if (setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, (const void *)&tos, sizeof(tos)) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "set TCLASS on socket: %s\n", strerror(errno));
       return -1;
     }
 #endif
@@ -458,8 +471,8 @@ int set_raw_socket_tos(evutil_socket_t fd, int family, int tos) {
     UNUSED_ARG(fd);
     UNUSED_ARG(tos);
 #else
-    if (setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
-      perror("set TOS on socket");
+    if (setsockopt(fd, IPPROTO_IP, IP_TOS, (const void *)&tos, sizeof(tos)) < 0) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "set TOS on socket: %s\n", strerror(errno));
       return -1;
     }
 #endif
@@ -539,19 +552,18 @@ int set_socket_df(evutil_socket_t fd, int family, int value) {
     const int val = value;
     /* kernel sets DF bit on outgoing IP packets */
     if (family == AF_INET) {
-      ret = setsockopt(fd, IPPROTO_IP, IP_DONTFRAG, &val, sizeof(val));
+      ret = setsockopt(fd, IPPROTO_IP, IP_DONTFRAG, (const void *)&val, sizeof(val));
     } else {
 #if defined(IPV6_DONTFRAG) && defined(IPPROTO_IPV6)
-      ret = setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG, &val, sizeof(val));
+      ret = setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG, (const void *)&val, sizeof(val));
 #else
 #error CANNOT SET IPV6 SOCKET DF FLAG (1)
 #endif
     }
     if (ret < 0) {
       int err = socket_errno();
-      perror("set socket df:");
-      TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "%s: set sockopt failed: fd=%d, err=%d, family=%d\n", __FUNCTION__, fd, err,
-                    family);
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: set sockopt failed: fd=%d, err=%d, family=%d. Error: %s\n", __FUNCTION__,
+                    fd, err, family, strerror(errno));
     }
   }
 #elif defined(IPPROTO_IP) && defined(IP_MTU_DISCOVER) && defined(IP_PMTUDISC_DO) && defined(IP_PMTUDISC_DONT) // LINUX
@@ -559,22 +571,23 @@ int set_socket_df(evutil_socket_t fd, int family, int value) {
     /* kernel sets DF bit on outgoing IP packets */
     if (family == AF_INET) {
       int val = IP_PMTUDISC_DO;
-      if (!value)
+      if (!value) {
         val = IP_PMTUDISC_DONT;
-      ret = setsockopt(fd, IPPROTO_IP, IP_MTU_DISCOVER, &val, sizeof(val));
+      }
+      ret = setsockopt(fd, IPPROTO_IP, IP_MTU_DISCOVER, (const void *)&val, sizeof(val));
     } else {
 #if defined(IPPROTO_IPV6) && defined(IPV6_MTU_DISCOVER) && defined(IPV6_PMTUDISC_DO) && defined(IPV6_PMTUDISC_DONT)
       int val = IPV6_PMTUDISC_DO;
-      if (!value)
+      if (!value) {
         val = IPV6_PMTUDISC_DONT;
-      ret = setsockopt(fd, IPPROTO_IPV6, IPV6_MTU_DISCOVER, &val, sizeof(val));
+      }
+      ret = setsockopt(fd, IPPROTO_IPV6, IPV6_MTU_DISCOVER, (const void *)&val, sizeof(val));
 #else
 #error CANNOT SET IPV6 SOCKET DF FLAG (2)
 #endif
     }
     if (ret < 0) {
-      perror("set DF");
-      TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "%s: set sockopt failed\n", __FUNCTION__);
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: set sockopt failed. Error: %s\n", __FUNCTION__, strerror(errno));
     }
   }
 #else
@@ -590,8 +603,9 @@ int set_socket_df(evutil_socket_t fd, int family, int value) {
 static int get_mtu_from_ssl(SSL *ssl) {
   int ret = SOSO_MTU;
 #if DTLS_SUPPORTED
-  if (ssl)
+  if (ssl) {
     ret = BIO_ctrl(SSL_get_wbio(ssl), BIO_CTRL_DGRAM_QUERY_MTU, 0, NULL);
+  }
 #else
   UNUSED_ARG(ssl);
 #endif
@@ -610,29 +624,35 @@ static void set_query_mtu(SSL *ssl) {
 
 int decrease_mtu(SSL *ssl, int mtu, int verbose) {
 
-  if (!ssl)
+  if (!ssl) {
     return mtu;
+  }
 
   int new_mtu = get_mtu_from_ssl(ssl);
 
-  if (new_mtu < 1)
+  if (new_mtu < 1) {
     new_mtu = mtu;
+  }
 
-  if (new_mtu > MAX_MTU)
+  if (new_mtu > MAX_MTU) {
     mtu = MAX_MTU;
-  if (new_mtu > 0 && new_mtu < MIN_MTU)
+  }
+  if (new_mtu > 0 && new_mtu < MIN_MTU) {
     mtu = MIN_MTU;
-  else if (new_mtu < mtu)
+  } else if (new_mtu < mtu) {
     mtu = new_mtu;
-  else
+  } else {
     mtu -= MTU_STEP;
+  }
 
-  if (mtu < MIN_MTU)
+  if (mtu < MIN_MTU) {
     mtu = MIN_MTU;
+  }
 
   set_query_mtu(ssl);
-  if (verbose)
+  if (verbose) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "1. mtu to use: %d\n", mtu);
+  }
 
 #if DTLS_SUPPORTED
   SSL_set_mtu(ssl, mtu);
@@ -644,21 +664,24 @@ int decrease_mtu(SSL *ssl, int mtu, int verbose) {
 
 int set_mtu_df(SSL *ssl, evutil_socket_t fd, int family, int mtu, int df_value, int verbose) {
 
-  if (!ssl || fd < 0)
+  if (!ssl || fd < 0) {
     return 0;
+  }
 
-  int ret = set_socket_df(fd, family, df_value);
+  const int ret = set_socket_df(fd, family, df_value);
 
-  if (!mtu)
+  if (!mtu) {
     mtu = SOSO_MTU;
-  else if (mtu < MIN_MTU)
+  } else if (mtu < MIN_MTU) {
     mtu = MIN_MTU;
-  else if (mtu > MAX_MTU)
+  } else if (mtu > MAX_MTU) {
     mtu = MAX_MTU;
+  }
 
   set_query_mtu(ssl);
-  if (verbose)
+  if (verbose) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "3. mtu to use: %d\n", mtu);
+  }
 
 #if DTLS_SUPPORTED
 
@@ -668,8 +691,9 @@ int set_mtu_df(SSL *ssl, evutil_socket_t fd, int family, int mtu, int df_value, 
 
 #endif
 
-  if (verbose)
+  if (verbose) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "4. new mtu: %d\n", get_mtu_from_ssl(ssl));
+  }
 
   return ret;
 }
@@ -686,10 +710,10 @@ int get_socket_mtu(evutil_socket_t fd, int family, int verbose) {
   int val = 0;
   socklen_t slen = sizeof(val);
   if (family == AF_INET) {
-    ret = getsockopt(fd, IPPROTO_IP, IP_MTU, &val, &slen);
+    ret = getsockopt(fd, IPPROTO_IP, IP_MTU, (void *)&val, &slen);
   } else {
 #if defined(IPPROTO_IPV6) && defined(IPV6_MTU)
-    ret = getsockopt(fd, IPPROTO_IPV6, IPV6_MTU, &val, &slen);
+    ret = getsockopt(fd, IPPROTO_IPV6, IPV6_MTU, (void *)&val, &slen);
 #endif
     ;
   }
@@ -697,8 +721,9 @@ int get_socket_mtu(evutil_socket_t fd, int family, int verbose) {
   ret = val;
 #endif
 
-  if (verbose)
+  if (verbose) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "%s: final=%d\n", __FUNCTION__, ret);
+  }
 
   return ret;
 }
@@ -762,8 +787,9 @@ int handle_socket_error(void) {
 //////////////////// Misc utils //////////////////////////////
 
 char *skip_blanks(char *s) {
-  while (*s == ' ' || *s == '\t' || *s == '\n')
+  while (*s == ' ' || *s == '\t' || *s == '\n') {
     ++s;
+  }
 
   return s;
 }
@@ -810,9 +836,9 @@ int clock_gettime(int X, struct timeval *tv) {
       frequencyToMicroseconds = 10.;
     }
   }
-  if (usePerformanceCounter)
+  if (usePerformanceCounter) {
     QueryPerformanceCounter(&t);
-  else {
+  } else {
     GetSystemTimeAsFileTime(&f);
     t.QuadPart = f.dwHighDateTime;
     t.QuadPart <<= 32;
@@ -858,15 +884,55 @@ char *dirname(char *path) {
   }
 
   int n = strlen(drive) + strlen(dir);
-  if (n > 0)
+  if (n > 0) {
     path[n] = 0;
-  else
+  } else {
     return NULL;
+  }
   return path;
 }
 #endif
 
 #if defined(WINDOWS)
+
+/*!
+ * \brief convert wchar to char
+ *
+ * \param pszInBuf: input buffer of wchar_t
+ * \param nInSize: size of input wchar_t buffer
+ * \param pszOutBuf: output buffer of char
+ * \param pnOutSize: size of output char buffer
+ * \return
+ */
+static char *_WTA(__in wchar_t *pszInBuf, __in int nInSize, __out char **pszOutBuf, __out int *pnOutSize) {
+  if (!pszInBuf || !pszOutBuf || !pnOutSize || nInSize <= 0) {
+    return NULL;
+  }
+  *pnOutSize = WideCharToMultiByte((UINT)0, (DWORD)0, pszInBuf, nInSize, NULL, 0, NULL, NULL);
+  if (*pnOutSize == 0) {
+    return NULL;
+  }
+  // add 1 for explicit nul-terminator at end.
+  // if MultiByteToWideChar is provided a length for the input, it does not add space for a nul-terminator
+  // and we have to add space to the allocation ourselves.
+  (*pnOutSize)++;
+  *pszOutBuf = malloc(*pnOutSize * sizeof(char));
+  if (!pszOutBuf) {
+    return NULL;
+  }
+  if (WideCharToMultiByte((UINT)0, (DWORD)0, pszInBuf, nInSize, *pszOutBuf, *pnOutSize, NULL, NULL) == 0) {
+    free(*pszOutBuf);
+    return NULL;
+  } else {
+    if (pszOutBuf != NULL) {
+      (*pszOutBuf)[*pnOutSize - 1] = '\0';
+      return *pszOutBuf;
+    } else {
+      return NULL;
+    }
+  }
+}
+
 int getdomainname(char *name, size_t len) {
   DSROLE_PRIMARY_DOMAIN_INFO_BASIC *info;
   DWORD dw;
@@ -889,8 +955,9 @@ int getdomainname(char *name, size_t len) {
         strncpy(name, pszOut, n);
         name[n] = 0;
         TURN_LOG_FUNC(TURN_LOG_LEVEL_DEBUG, "DomainForestName: %s\n", pszOut);
-      } else
+      } else {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "wchar convert to char fail");
+      }
 
       free(pszOut);
       break;
@@ -909,8 +976,9 @@ int getdomainname(char *name, size_t len) {
         strncpy(name, pszOut, n);
         name[n] = 0;
         TURN_LOG_FUNC(TURN_LOG_LEVEL_DEBUG, "DomainNameDns: %s\n", pszOut);
-      } else
+      } else {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "wchar convert to char fail");
+      }
 
       free(pszOut);
       break;
@@ -929,8 +997,9 @@ int getdomainname(char *name, size_t len) {
         strncpy(name, pszOut, n);
         name[n] = 0;
         TURN_LOG_FUNC(TURN_LOG_LEVEL_DEBUG, "DomainNameFlat: %s\n", pszOut);
-      } else
+      } else {
         TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "wchar convert to char fail");
+      }
 
       free(pszOut);
     } else {
@@ -941,57 +1010,6 @@ int getdomainname(char *name, size_t len) {
 
   DsRoleFreeMemory(info);
   return 0;
-}
-
-/*!
- * \brief convert char to wchar
- *
- * \param pszInBuf: input buffer of wchar string
- * \param nInSize: size of wchar string
- * \param pszOutBuf: output buffer of char string
- * \param pnOutSize: size of char string
- * \return
- */
-wchar_t *_ATW(__in char *pszInBuf, __in int nInSize, __out wchar_t **pszOutBuf, __out int *pnOutSize) {
-  if (!pszInBuf || !pszOutBuf || !pnOutSize || nInSize <= 0)
-    return NULL;
-  // Get buffer size
-  *pnOutSize = MultiByteToWideChar(NULL, NULL, pszInBuf, nInSize, *pszOutBuf, 0);
-  if (*pnOutSize == 0)
-    return NULL;
-  (*pnOutSize)++;
-  *pszOutBuf = malloc((*pnOutSize) * sizeof(wchar_t));
-  memset((void *)*pszOutBuf, 0, sizeof(wchar_t) * (*pnOutSize));
-  if (MultiByteToWideChar(NULL, NULL, pszInBuf, nInSize, *pszOutBuf, *pnOutSize) == 0) {
-    free(*pszOutBuf);
-    return NULL;
-  } else
-    return *pszOutBuf;
-}
-
-/*!
- * \brief convert wchar to char
- *
- * \param pszInBuf: input buffer of char string
- * \param nInSize: size of char string
- * \param pszOutBuf: output buffer of wchar string
- * \param pnOutSize: size of wchar string
- * \return
- */
-char *_WTA(__in wchar_t *pszInBuf, __in int nInSize, __out char **pszOutBuf, __out int *pnOutSize) {
-  if (!pszInBuf || !pszOutBuf || !pnOutSize || nInSize <= 0)
-    return NULL;
-  *pnOutSize = WideCharToMultiByte(NULL, NULL, pszInBuf, nInSize, *pszOutBuf, 0, NULL, NULL);
-  if (*pnOutSize == 0)
-    return NULL;
-  (*pnOutSize)++;
-  *pszOutBuf = malloc(*pnOutSize * sizeof(char));
-  memset((void *)*pszOutBuf, 0, sizeof(char) * (*pnOutSize));
-  if (WideCharToMultiByte(NULL, NULL, pszInBuf, nInSize, *pszOutBuf, *pnOutSize, NULL, NULL) == 0) {
-    free(*pszOutBuf);
-    return NULL;
-  } else
-    return *pszOutBuf;
 }
 
 #endif
@@ -1047,14 +1065,17 @@ void set_execdir(void) {
   if (_var && *_var) {
     _var = strdup(_var);
     char *edir = _var;
-    if (edir[0] != '.')
+    if (edir[0] != '.') {
       edir = strstr(edir, "/");
-    if (edir && *edir)
+    }
+    if (edir && *edir) {
       edir = dirname(edir);
-    else
+    } else {
       edir = dirname(_var);
-    if (c_execdir)
+    }
+    if (c_execdir) {
       free(c_execdir);
+    }
     c_execdir = strdup(edir);
     free(_var);
   }
@@ -1065,17 +1086,20 @@ void print_abs_file_name(const char *msg1, const char *msg2, const char *fn) {
   absfn[0] = 0;
 
   if (fn) {
-    while (fn[0] && fn[0] == ' ')
+    while (fn[0] && fn[0] == ' ') {
       ++fn;
+    }
     if (fn[0]) {
       if (fn[0] == '/') {
         STRCPY(absfn, fn);
       } else {
-        if (fn[0] == '.' && fn[1] && fn[1] == '/')
+        if (fn[0] == '.' && fn[1] && fn[1] == '/') {
           fn += 2;
-        if (!getcwd(absfn, sizeof(absfn) - 1))
+        }
+        if (!getcwd(absfn, sizeof(absfn) - 1)) {
           absfn[0] = 0;
-        size_t blen = strlen(absfn);
+        }
+        const size_t blen = strlen(absfn);
         if (blen < sizeof(absfn) - 1) {
           strncpy(absfn + blen, "/", sizeof(absfn) - blen);
           strncpy(absfn + blen + 1, fn, sizeof(absfn) - blen - 1);
@@ -1091,7 +1115,7 @@ void print_abs_file_name(const char *msg1, const char *msg2, const char *fn) {
   }
 }
 
-char *find_config_file(const char *config_file, int print_file_name) {
+char *find_config_file(const char *config_file) {
   char *full_path_to_config_file = NULL;
 
   if (config_file && config_file[0]) {
@@ -1103,10 +1127,10 @@ char *find_config_file(const char *config_file, int print_file_name) {
       }
     } else {
       int i = 0;
-      size_t cflen = strlen(config_file);
+      const size_t cflen = strlen(config_file);
 
       while (config_file_search_dirs[i]) {
-        size_t dirlen = strlen(config_file_search_dirs[i]);
+        const size_t dirlen = strlen(config_file_search_dirs[i]);
         size_t fnsz = sizeof(char) * (dirlen + cflen + 10);
         char *fn = (char *)malloc(fnsz + 1);
         strncpy(fn, config_file_search_dirs[i], fnsz);
@@ -1120,7 +1144,7 @@ char *find_config_file(const char *config_file, int print_file_name) {
         }
         free(fn);
         if (config_file_search_dirs[i][0] != '/' && config_file_search_dirs[i][0] != '.' && c_execdir && c_execdir[0]) {
-          size_t celen = strlen(c_execdir);
+          const size_t celen = strlen(c_execdir);
           fnsz = sizeof(char) * (dirlen + cflen + celen + 10);
           fn = (char *)malloc(fnsz + 1);
           strncpy(fn, c_execdir, fnsz);
@@ -1153,7 +1177,7 @@ char *find_config_file(const char *config_file, int print_file_name) {
 
     if (!full_path_to_config_file) {
       if (strstr(config_file, "etc/") == config_file) {
-        return find_config_file(config_file + 4, print_file_name);
+        return find_config_file(config_file + 4);
       }
     }
   }
@@ -1167,22 +1191,31 @@ void ignore_sigpipe(void) {
 #if defined(__linux__) || defined(__APPLE__)
   /* Ignore SIGPIPE from TCP sockets */
   if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
-    perror("Cannot set SIGPIPE handler");
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot set SIGPIPE handler: %s\n", strerror(errno));
   }
 #endif
 }
 
 static uint64_t turn_getRandTime(void) {
+#if defined(_MSC_VER)
+  /* MSVC build uses the in-tree shim clock_gettime(int, struct timeval *) -
+   * sub-second field is microseconds, not nanoseconds. */
+  struct timeval tp = {0, 0};
+#if defined(CLOCK_REALTIME)
+  clock_gettime(CLOCK_REALTIME, &tp);
+#else
+  tp.tv_sec = (long)time(NULL);
+#endif
+  return (uint64_t)tp.tv_sec + (uint64_t)tp.tv_usec;
+#else
   struct timespec tp = {0, 0};
 #if defined(CLOCK_REALTIME)
   clock_gettime(CLOCK_REALTIME, &tp);
 #else
   tp.tv_sec = time(NULL);
 #endif
-  uint64_t current_time = (uint64_t)(tp.tv_sec);
-  uint64_t current_mstime = (uint64_t)(current_time + (tp.tv_nsec));
-
-  return current_mstime;
+  return (uint64_t)tp.tv_sec + (uint64_t)tp.tv_nsec;
+#endif
 }
 
 void turn_srandom(void) {
@@ -1213,7 +1246,7 @@ unsigned long set_system_parameters(int max_resources) {
 
     struct rlimit rlim;
     if (getrlimit(RLIMIT_NOFILE, &rlim) < 0) {
-      perror("Cannot get system limit");
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot get system limit: %s\n", strerror(errno));
     } else {
       rlim.rlim_cur = rlim.rlim_max;
       while ((setrlimit(RLIMIT_NOFILE, &rlim) < 0) && (rlim.rlim_cur > 0)) {
@@ -1266,29 +1299,29 @@ unsigned long get_system_active_number_of_cpus(void) {
 
 ////////////////////// Base 64 ////////////////////////////
 
-static char encoding_table[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
-                                'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
-                                'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-                                'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
-static char *decoding_table = NULL;
-static size_t mod_table[] = {0, 2, 1};
+static const size_t mod_table[] = {0, 2, 1};
+static const char encoding_table[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+                                      'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+                                      'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+                                      'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
+static const char *decoding_table = NULL;
 
 char *base64_encode(const unsigned char *data, size_t input_length, size_t *output_length) {
 
   *output_length = 4 * ((input_length + 2) / 3);
 
   char *encoded_data = (char *)malloc(*output_length + 1);
-  if (encoded_data == NULL)
+  if (encoded_data == NULL) {
     return NULL;
+  }
 
-  size_t i, j;
-  for (i = 0, j = 0; i < input_length;) {
+  for (size_t i = 0, j = 0; i < input_length;) {
 
-    uint32_t octet_a = i < input_length ? data[i++] : 0;
-    uint32_t octet_b = i < input_length ? data[i++] : 0;
-    uint32_t octet_c = i < input_length ? data[i++] : 0;
+    const uint32_t octet_a = i < input_length ? data[i++] : 0;
+    const uint32_t octet_b = i < input_length ? data[i++] : 0;
+    const uint32_t octet_c = i < input_length ? data[i++] : 0;
 
-    uint32_t triple = (octet_a << 0x10) + (octet_b << 0x08) + octet_c;
+    const uint32_t triple = (octet_a << 0x10) + (octet_b << 0x08) + octet_c;
 
     encoded_data[j++] = encoding_table[(triple >> 3 * 6) & 0x3F];
     encoded_data[j++] = encoding_table[(triple >> 2 * 6) & 0x3F];
@@ -1296,8 +1329,9 @@ char *base64_encode(const unsigned char *data, size_t input_length, size_t *outp
     encoded_data[j++] = encoding_table[(triple >> 0 * 6) & 0x3F];
   }
 
-  for (i = 0; i < mod_table[input_length % 3]; i++)
+  for (size_t i = 0; i < mod_table[input_length % 3]; i++) {
     encoded_data[*output_length - 1 - i] = '=';
+  }
 
   encoded_data[*output_length] = 0;
 
@@ -1306,49 +1340,59 @@ char *base64_encode(const unsigned char *data, size_t input_length, size_t *outp
 
 void build_base64_decoding_table(void) {
 
-  decoding_table = (char *)malloc(256);
-  memset(decoding_table, 0, 256);
+  char *table = (char *)calloc(256, sizeof(char));
 
-  int i;
-  for (i = 0; i < 64; i++)
-    decoding_table[(unsigned char)encoding_table[i]] = (char)i;
+  if (table) {
+    for (size_t i = 0; i < 64; i++) {
+      table[(unsigned char)encoding_table[i]] = i;
+    }
+    decoding_table = table;
+  }
 }
 
 unsigned char *base64_decode(const char *data, size_t input_length, size_t *output_length) {
 
-  if (decoding_table == NULL)
+  if (decoding_table == NULL) {
     build_base64_decoding_table();
+  }
 
-  if (input_length % 4 != 0)
+  if (input_length % 4 != 0) {
     return NULL;
+  }
 
   *output_length = input_length / 4 * 3;
-  if (data[input_length - 1] == '=')
+  if (data[input_length - 1] == '=') {
     (*output_length)--;
-  if (data[input_length - 2] == '=')
+  }
+  if (data[input_length - 2] == '=') {
     (*output_length)--;
+  }
 
   unsigned char *decoded_data = (unsigned char *)malloc(*output_length);
-  if (decoded_data == NULL)
+  if (decoded_data == NULL) {
     return NULL;
+  }
 
   int i;
   size_t j;
   for (i = 0, j = 0; i < (int)input_length;) {
 
-    uint32_t sextet_a = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
-    uint32_t sextet_b = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
-    uint32_t sextet_c = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
-    uint32_t sextet_d = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
+    const uint32_t sextet_a = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
+    const uint32_t sextet_b = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
+    const uint32_t sextet_c = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
+    const uint32_t sextet_d = data[i] == '=' ? 0 & i++ : decoding_table[(int)data[i++]];
 
-    uint32_t triple = (sextet_a << 3 * 6) + (sextet_b << 2 * 6) + (sextet_c << 1 * 6) + (sextet_d << 0 * 6);
+    const uint32_t triple = (sextet_a << 3 * 6) + (sextet_b << 2 * 6) + (sextet_c << 1 * 6) + (sextet_d << 0 * 6);
 
-    if (j < *output_length)
+    if (j < *output_length) {
       decoded_data[j++] = (triple >> 2 * 8) & 0xFF;
-    if (j < *output_length)
+    }
+    if (j < *output_length) {
       decoded_data[j++] = (triple >> 1 * 8) & 0xFF;
-    if (j < *output_length)
+    }
+    if (j < *output_length) {
       decoded_data[j++] = (triple >> 0 * 8) & 0xFF;
+    }
   }
 
   return decoded_data;
@@ -1371,10 +1415,10 @@ const char *turn_get_ssl_method(SSL *ssl, const char *mdefault) {
 
 struct event_base *turn_event_base_new(void) {
   struct event_config *cfg = event_config_new();
-
   event_config_set_flag(cfg, EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
-
-  return event_base_new_with_config(cfg);
+  struct event_base *base = event_base_new_with_config(cfg);
+  event_config_free(cfg); // Free the config after use to make valgrind happy
+  return base;
 }
 
 /////////// OAUTH /////////////////

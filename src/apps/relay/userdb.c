@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * https://opensource.org/license/bsd-3-clause
+ *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
  * Copyright (C) 2022 Wire Swiss GmbH
  *
@@ -80,13 +84,6 @@ static ur_string_map *realms = NULL;
 static TURN_MUTEX_DECLARE(o_to_realm_mutex);
 static ur_string_map *o_to_realm = NULL;
 static secrets_list_t realms_list;
-
-#ifndef _MSC_VER
-_Atomic
-#else
-volatile
-#endif
-    size_t global_allocation_count = 0; // used for drain mode, to know when all allocations have gone away
 
 static char userdb_type_unknown[] = "Unknown";
 static char userdb_type_sqlite[] = "SQLite";
@@ -177,6 +174,10 @@ realm_params_t *get_realm(char *name) {
     } else {
       realm_params_t *ret = (realm_params_t *)malloc(sizeof(realm_params_t));
       memcpy(ret, default_realm_params_ptr, sizeof(realm_params_t));
+      if (ret == NULL) {
+        TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: error allocating memory\n", __FUNCTION__);
+        return default_realm_params_ptr;
+      }
       STRCPY(ret->options.name, name);
       value = (ur_string_map_value_type)ret;
       ur_string_map_put(realms, key, value);
@@ -222,7 +223,7 @@ void get_realm_options_by_name(char *realm, realm_options_t *ro) {
 }
 
 int change_total_quota(char *realm, int value) {
-  int ret = value;
+  const int ret = value;
   lock_realms();
   realm_params_t *rp = get_realm(realm);
   rp->options.perf_options.total_quota = value;
@@ -231,7 +232,7 @@ int change_total_quota(char *realm, int value) {
 }
 
 int change_user_quota(char *realm, int value) {
-  int ret = value;
+  const int ret = value;
   lock_realms();
   realm_params_t *rp = get_realm(realm);
   rp->options.perf_options.user_quota = value;
@@ -479,7 +480,7 @@ regout:
   return ret;
 }
 
-void init_zrest_regex() {
+void init_zrest_regex(void) {
   if(regcomp(&zrest_username_regex, ZREST_USERNAME_REGEX, REG_EXTENDED)!=0) {
     fputs("regcomp: could not compile zrest username regex\n", stderr);
     exit(-1);
@@ -493,8 +494,9 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
                  ioa_network_buffer_handle nbh) {
   int ret = -1;
 
-  if (max_session_time)
+  if (max_session_time) {
     *max_session_time = 0;
+  }
 
   if (in_oauth && out_oauth && usname && usname[0]) {
 
@@ -502,7 +504,7 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
                                                         STUN_ATTRIBUTE_OAUTH_ACCESS_TOKEN);
     if (sar) {
 
-      int len = stun_attr_get_len(sar);
+      const int len = stun_attr_get_len(sar);
       const uint8_t *value = stun_attr_get_value(sar);
 
       *out_oauth = 1;
@@ -516,12 +518,14 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
           oauth_key_data_raw rawKey;
           memset(&rawKey, 0, sizeof(rawKey));
 
-          int gres = (*(dbd->get_oauth_key))(usname, &rawKey);
-          if (gres < 0)
+          const int gres = (*(dbd->get_oauth_key))(usname, &rawKey);
+          if (gres < 0) {
             return ret;
+          }
 
-          if (!rawKey.kid[0])
+          if (!rawKey.kid[0]) {
             return ret;
+          }
 
           if (rawKey.lifetime) {
             if (!turn_time_before(turn_time(), (turn_time_t)(rawKey.timestamp + rawKey.lifetime + OAUTH_TIME_DELTA))) {
@@ -535,12 +539,12 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
           convert_oauth_key_data_raw(&rawKey, &okd);
 
           char err_msg[1025] = "\0";
-          size_t err_msg_size = sizeof(err_msg) - 1;
+          const size_t err_msg_size = sizeof(err_msg) - 1;
 
           oauth_key okey;
           memset(&okey, 0, sizeof(okey));
 
-          if (convert_oauth_key_data(&okd, &okey, err_msg, err_msg_size) < 0) {
+          if (!convert_oauth_key_data(&okd, &okey, err_msg, err_msg_size)) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s\n", err_msg);
             return -1;
           }
@@ -567,7 +571,7 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
             }
           }
 
-          if (decode_oauth_token((const uint8_t *)server_name, &etoken, &okey, &dot) < 0) {
+          if (!decode_oauth_token((const uint8_t *)server_name, &etoken, &okey, &dot)) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot decode oauth token\n");
             return -1;
           }
@@ -589,11 +593,11 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
                                                       ioa_network_buffer_get_size(nbh), dot.enc_block.mac_key, pwdtmp,
                                                       SHATYPE_DEFAULT) > 0) {
 
-            turn_time_t lifetime = (turn_time_t)(dot.enc_block.lifetime);
+            const turn_time_t lifetime = (turn_time_t)(dot.enc_block.lifetime);
             if (lifetime) {
-              turn_time_t ts = (turn_time_t)(dot.enc_block.timestamp >> 16);
-              turn_time_t to = ts + lifetime + OAUTH_TIME_DELTA;
-              turn_time_t ct = turn_time();
+              const turn_time_t ts = (turn_time_t)(dot.enc_block.timestamp >> 16);
+              const turn_time_t to = ts + lifetime + OAUTH_TIME_DELTA;
+              const turn_time_t ct = turn_time();
               if (!turn_time_before(ct, to)) {
                 TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "oAuth token is too old\n");
                 return -1;
@@ -685,15 +689,16 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
 
   if (turn_params.use_auth_secret_with_timestamp) {
 
-    turn_time_t ctime = (turn_time_t)time(NULL);
+    const turn_time_t ctime = (turn_time_t)time(NULL);
     turn_time_t ts = 0;
     secrets_list_t sl;
     size_t sll = 0;
 
     init_secrets_list(&sl);
 
-    if (get_auth_secrets(&sl, realm) < 0)
+    if (get_auth_secrets(&sl, realm) < 0) {
       return ret;
+    }
 
     ts = get_rest_api_timestamp((char *)usname);
 
@@ -707,10 +712,11 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
 
       stun_attr_ref sar = stun_attr_get_first_by_type_str(
           ioa_network_buffer_data(nbh), ioa_network_buffer_get_size(nbh), STUN_ATTRIBUTE_MESSAGE_INTEGRITY);
-      if (!sar)
+      if (!sar) {
         return -1;
+      }
 
-      int sarlen = stun_attr_get_len(sar);
+      const int sarlen = stun_attr_get_len(sar);
       switch (sarlen) {
       case SHA1SIZEBYTES:
         hmac_len = SHA1SIZEBYTES;
@@ -728,7 +734,7 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
 
         if (secret) {
           if (stun_calculate_hmac(usname, strlen((char *)usname), (const uint8_t *)secret, strlen(secret), hmac,
-                                  &hmac_len, SHATYPE_DEFAULT) >= 0) {
+                                  &hmac_len, SHATYPE_DEFAULT)) {
             size_t pwd_length = 0;
             char *pwd = base64_encode(hmac, hmac_len, &pwd_length);
 
@@ -736,9 +742,7 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
               if (pwd_length < 1) {
                 free(pwd);
               } else {
-                if (stun_produce_integrity_key_str((uint8_t *)usname, realm, (uint8_t *)pwd, key, SHATYPE_DEFAULT) >=
-                    0) {
-
+                if (stun_produce_integrity_key_str((uint8_t *)usname, realm, (uint8_t *)pwd, key, SHATYPE_DEFAULT)) {
                   if (stun_check_message_integrity_by_key_str(TURN_CREDENTIALS_LONG_TERM, ioa_network_buffer_data(nbh),
                                                               ioa_network_buffer_get_size(nbh), key, pwdtmp,
                                                               SHATYPE_DEFAULT) > 0) {
@@ -748,8 +752,9 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
                 }
                 free(pwd);
 
-                if (ret == 0)
+                if (ret == 0) {
                   break;
+                }
               }
             }
           }
@@ -770,7 +775,7 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
   ur_string_map_unlock(turn_params.default_users_db.ram_db.static_accounts);
 
   if (ret == 0) {
-    size_t sz = get_hmackey_size(SHATYPE_DEFAULT);
+    const size_t sz = get_hmackey_size(SHATYPE_DEFAULT);
     memcpy(key, ukey, sz);
     return 0;
   }
@@ -788,20 +793,22 @@ uint8_t *start_user_check(turnserver_id id, turn_credential_type ct, int in_oaut
                           int *postpone_reply) {
   *postpone_reply = 1;
 
-  struct auth_message am;
-  memset(&am, 0, sizeof(struct auth_message));
-  am.id = id;
-  am.ct = ct;
-  am.in_oauth = in_oauth;
-  am.out_oauth = *out_oauth;
-  STRCPY(am.username, usname);
-  STRCPY(am.realm, realm);
-  am.resume_func = resume;
-  memcpy(&(am.in_buffer), in_buffer, sizeof(ioa_net_data));
+  struct auth_message *am = calloc(1, sizeof(*am));
+  if (!am) {
+    return NULL;
+  }
+  am->id = id;
+  am->ct = ct;
+  am->in_oauth = in_oauth;
+  am->out_oauth = *out_oauth;
+  STRCPY(am->username, usname);
+  STRCPY(am->realm, realm);
+  am->resume_func = resume;
+  memcpy(&(am->in_buffer), in_buffer, sizeof(ioa_net_data));
   in_buffer->nbh = NULL;
-  am.ctxkey = ctxkey;
+  am->ctxkey = ctxkey;
 
-  send_auth_message_to_auth_server(&am);
+  send_auth_message_to_auth_server(am);
 
   return NULL;
 }
@@ -837,14 +844,6 @@ int check_new_allocation_quota(uint8_t *user, int oauth, uint8_t *realm) {
     ur_string_map_unlock(rp->status.alloc_counters);
   }
 
-#ifndef _MSC_VER
-  global_allocation_count++;
-  TURN_LOG_FUNC(TURN_LOG_LEVEL_DEBUG, "Global turn allocation count incremented, now %ld\n", global_allocation_count);
-#else
-  size_t cur_count = (size_t)InterlockedIncrement((volatile LONG *)&global_allocation_count);
-  TURN_LOG_FUNC(TURN_LOG_LEVEL_DEBUG, "Global turn allocation count incremented, now %ld\n", cur_count);
-#endif
-
   return ret;
 }
 
@@ -865,75 +864,87 @@ void release_allocation_quota(uint8_t *user, int oauth, uint8_t *realm) {
         }
       }
     }
-    if (rp->status.total_current_allocs)
+    if (rp->status.total_current_allocs) {
       --(rp->status.total_current_allocs);
+    }
     ur_string_map_unlock(rp->status.alloc_counters);
     free(username);
   }
 
-  int log_level = TURN_LOG_LEVEL_DEBUG;
-  if (turn_params.drain_turn_server) {
-    log_level = TURN_LOG_LEVEL_INFO;
-  }
-#ifndef _MSC_VER
-  global_allocation_count--;
-  TURN_LOG_FUNC(log_level, "Global turn allocation count decremented, now %ld\n", global_allocation_count);
-#else
-  size_t cur_count = (size_t)InterlockedDecrement((volatile LONG *)&global_allocation_count);
-  TURN_LOG_FUNC(log_level, "Global turn allocation count decremented, now %ld\n", cur_count);
-#endif
+  decrement_global_allocation_count();  
 }
 
 //////////////////////////////////
 
 int add_static_user_account(char *user) {
   /* Realm is either default or empty for users taken from file or command-line */
-  if(user && !turn_params.use_auth_secret_with_timestamp && !turn_params.use_zrest_auth_secret) {
-    char *s = strstr(user, ":");
-    if (!s || (s == user) || (strlen(s) < 2)) {
-      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong user account: %s\n", user);
-    } else {
-      size_t ulen = s - user;
-      char *usname = (char *)calloc(ulen + 1, sizeof(char));
-      strncpy(usname, user, ulen);
-      usname[ulen] = 0;
-      if (SASLprep((uint8_t *)usname) < 0) {
-        TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong user name: %s\n", user);
-        free(usname);
-        return -1;
-      }
-      s = skip_blanks(s + 1);
-      hmackey_t *key = (hmackey_t *)malloc(sizeof(hmackey_t));
-      if (strstr(s, "0x") == s) {
-        char *keysource = s + 2;
-        size_t sz = get_hmackey_size(SHATYPE_DEFAULT);
-        if (strlen(keysource) < sz * 2) {
-          TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong key format: %s\n", s);
-        }
-        if (convert_string_key_to_binary(keysource, *key, sz) < 0) {
-          TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong key: %s\n", s);
-          free(usname);
-          free(key);
-          return -1;
-        }
-      } else {
-        // this is only for default realm
-        stun_produce_integrity_key_str((uint8_t *)usname, (uint8_t *)get_realm(NULL)->options.name, (uint8_t *)s, *key,
-                                       SHATYPE_DEFAULT);
-      }
-      {
-        ur_string_map_lock(turn_params.default_users_db.ram_db.static_accounts);
-        ur_string_map_put(turn_params.default_users_db.ram_db.static_accounts, (ur_string_map_key_type)usname,
-                          (ur_string_map_value_type)*key);
-        ur_string_map_unlock(turn_params.default_users_db.ram_db.static_accounts);
-      }
-      turn_params.default_users_db.ram_db.users_number++;
-      free(usname);
-      return 0;
-    }
+  if (!user || turn_params.use_auth_secret_with_timestamp || turn_params.use_zrest_auth_secret) {
+    return -1;
   }
 
-  return -1;
+  char *s = strstr(user, ":");
+  if (!s || (s == user) || (strlen(s) < 2)) {
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong user account: %s\n", user);
+    return -1;
+  }
+
+  const size_t ulen = s - user;
+
+  // TODO: TURN usernames should be length limited by the RFC.
+  // are user account names as well? If so, we can avoid allocating
+  // and instead use a stack buffer.
+  char *usname = (char *)malloc(ulen + 1);
+  if (!usname) {
+    return -1;
+  }
+
+  strncpy(usname, user, ulen);
+  usname[ulen] = 0;
+
+  if (!SASLprep((uint8_t *)usname)) {
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong user name: %s\n", user);
+    free(usname);
+    return -1;
+  }
+  s = skip_blanks(s + 1);
+
+  hmackey_t *key = (hmackey_t *)malloc(sizeof(hmackey_t));
+  if (!key) {
+    free(usname);
+    return -1;
+  }
+
+  if (strstr(s, "0x") == s) {
+    char *keysource = s + 2;
+    const size_t sz = get_hmackey_size(SHATYPE_DEFAULT);
+    if (strlen(keysource) < sz * 2) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Wrong key format: %s\n", s);
+    }
+    convert_string_key_to_binary(keysource, *key, sz);
+  } else {
+    // this is only for default realm
+    stun_produce_integrity_key_str((uint8_t *)usname, (uint8_t *)get_realm(NULL)->options.name, (uint8_t *)s, *key,
+                                   SHATYPE_DEFAULT);
+  }
+
+  // the ur_string_map functions only fail (well... other than allocation failures, which aren't handled)
+  // if the map isn't valid. So we only need to check the result of locking.
+  if (!ur_string_map_lock(turn_params.default_users_db.ram_db.static_accounts)) {
+    free(usname);
+    free(key);
+    return -1;
+  }
+
+  // key argument (the usname variable) is deep-copied, so ownership isn't transfered, and we still need to free usname
+  // later.. value argument (the key variable) has ownership transfered into this function
+  ur_string_map_put(turn_params.default_users_db.ram_db.static_accounts, (ur_string_map_key_type)usname,
+                    (ur_string_map_value_type)*key);
+  ur_string_map_unlock(turn_params.default_users_db.ram_db.static_accounts);
+
+  turn_params.default_users_db.ram_db.users_number++;
+
+  free(usname);
+  return 0;
 }
 
 ////////////////// Admin /////////////////////////
@@ -978,8 +989,9 @@ static int del_secret(uint8_t *secret, uint8_t *realm) {
 
 static int set_secret(uint8_t *secret, uint8_t *realm) {
 
-  if (!secret || (secret[0] == 0))
+  if (!secret || (secret[0] == 0)) {
     return 0;
+  }
 
   must_set_admin_realm(realm);
 
@@ -1029,8 +1041,9 @@ static int list_origins(uint8_t *realm) {
 }
 
 static int set_realm_option_one(uint8_t *realm, unsigned long value, const char *opt) {
-  if (value == (unsigned long)-1)
+  if (value == (unsigned long)-1) {
     return 0;
+  }
 
   const turn_dbdriver_t *dbd = get_dbdriver();
   if (dbd && dbd->set_realm_option_one) {
@@ -1113,11 +1126,10 @@ int adminuser(uint8_t *user, uint8_t *realm, uint8_t *pwd, uint8_t *secret, uint
 
     {
       stun_produce_integrity_key_str(user, realm, pwd, key, SHATYPE_DEFAULT);
-      size_t i = 0;
-      size_t sz = get_hmackey_size(SHATYPE_DEFAULT);
+      const size_t sz = get_hmackey_size(SHATYPE_DEFAULT);
       int maxsz = (int)(sz * 2) + 1;
       char *s = skey;
-      for (i = 0; (i < sz) && (maxsz > 2); i++) {
+      for (size_t i = 0; (i < sz) && (maxsz > 2); i++) {
         snprintf(s, (size_t)(sz * 2), "%02x", (unsigned int)key[i]);
         maxsz -= 2;
         s += 2;
@@ -1134,16 +1146,19 @@ int adminuser(uint8_t *user, uint8_t *realm, uint8_t *pwd, uint8_t *secret, uint
 
   } else if (dbd) {
 
-    if (!is_admin)
+    if (!is_admin) {
       must_set_admin_realm(realm);
+    }
 
     if (ct == TA_DELETE_USER) {
       if (is_admin) {
-        if (dbd->del_admin_user)
+        if (dbd->del_admin_user) {
           (*dbd->del_admin_user)(user);
+        }
       } else {
-        if (dbd->del_user)
+        if (dbd->del_user) {
           (*dbd->del_user)(user, realm);
+        }
       }
     } else if (ct == TA_UPDATE_USER) {
       if (is_admin) {
@@ -1154,8 +1169,9 @@ int adminuser(uint8_t *user, uint8_t *realm, uint8_t *pwd, uint8_t *secret, uint
           (*dbd->set_admin_user)(user, realm, password);
         }
       } else {
-        if (dbd->set_user_key)
+        if (dbd->set_user_key) {
           (*dbd->set_user_key)(user, realm, skey);
+        }
       }
     }
   }
@@ -1222,7 +1238,7 @@ void run_db_test(void) {
     oauth_key oak;
     char err_msg[1025];
     err_msg[0] = 0;
-    if (convert_oauth_key_data(&oakd, &oak, err_msg, sizeof(err_msg) - 1) < 0) {
+    if (!convert_oauth_key_data(&oakd, &oak, err_msg, sizeof(err_msg) - 1)) {
       printf("  ERROR: %s\n", err_msg);
     } else {
       printf("  OK!\n");
@@ -1318,7 +1334,7 @@ const ip_range_list_t *ioa_get_blacklist(ioa_engine_handle e) {
 }
 
 ip_range_list_t *get_ip_list(const char *kind) {
-  ip_range_list_t *ret = (ip_range_list_t *)calloc(sizeof(ip_range_list_t), 1);
+  ip_range_list_t *ret = (ip_range_list_t *)calloc(1, sizeof(ip_range_list_t));
 
   const turn_dbdriver_t *dbd = get_dbdriver();
   if (dbd && dbd->get_ip_list && !turn_params.no_dynamic_ip_list) {
@@ -1330,8 +1346,9 @@ ip_range_list_t *get_ip_list(const char *kind) {
 
 void ip_list_free(ip_range_list_t *l) {
   if (l) {
-    if (l->rs)
+    if (l->rs) {
       free(l->rs);
+    }
     free(l);
   }
 }
@@ -1387,16 +1404,18 @@ int add_ip_list_range(const char *range0, const char *realm, ip_range_list_t *li
     addr_cpy(&max, &min);
   }
 
-  if (separator)
+  if (separator) {
     *separator = '-';
+  }
 
   ++(list->ranges_number);
   list->rs = (ip_range_t *)realloc(list->rs, sizeof(ip_range_t) * list->ranges_number);
   STRCPY(list->rs[list->ranges_number - 1].str, range);
-  if (realm)
+  if (realm) {
     STRCPY(list->rs[list->ranges_number - 1].realm, realm);
-  else
+  } else {
     list->rs[list->ranges_number - 1].realm[0] = 0;
+  }
   free(range);
   ioa_addr_range_set(&(list->rs[list->ranges_number - 1].enc), &min, &max);
 
@@ -1431,8 +1450,9 @@ int check_ip_list_range(const char *range0) {
     addr_cpy(&max, &min);
   }
 
-  if (separator)
+  if (separator) {
     *separator = '-';
+  }
 
   free(range);
 
