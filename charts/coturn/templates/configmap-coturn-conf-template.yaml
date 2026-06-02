@@ -46,14 +46,13 @@ data:
     external-ip={{ default "__COTURN_EXT_IP__" .Values.coturnTurnExternalIP }}
     {{- end }}
     realm=dummy.io
-    no-stun-backward-compatibility
     secure-stun
-    no-rfc5780
     no-software-attribute
     response-origin-only-with-rfc5780
 
     ## prometheus metrics
-    prometheus-ip={{ default "__COTURN_POD_IP__" .Values.coturnPrometheusIP }}
+    prometheus
+    prometheus-address={{ default "__COTURN_POD_IP__" .Values.coturnPrometheusIP }}
     prometheus-port={{ .Values.coturnMetricsListenPort }}
 
     ## logs
