@@ -299,6 +299,10 @@ static void reload_ssl_certs(evutil_socket_t sock, short events, void *args);
 static void shutdown_handler(evutil_socket_t sock, short events, void *args);
 static void drain_handler(evutil_socket_t sock, short events, void *args);
 
+#if defined(__linux__)
+static void ratelimit_update_allowlist_handler(evutil_socket_t sock, short events, void *args);
+#endif
+
 //////////////////////////////////////////////////
 
 static int make_local_listeners_list(void) {
