@@ -107,6 +107,11 @@ federate:
   enabled: false
   port: 9191
 
+  snat:
+    # Preserve the federation source port through node-level SNAT. This requires
+    # a privileged init container and should only be enabled where needed.
+    enabled: false
+
   dtls:
     enabled: false
 
