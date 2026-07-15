@@ -107,6 +107,16 @@ federate:
   enabled: false
   port: 9191
 
+  snat:
+    # Preserve the federation source port through node-level SNAT. This requires
+    # a privileged init container and should only be enabled where needed.
+    enabled: false
+    # Must ship iptables-nft and conntrack (no runtime install, works air-gapped).
+    image:
+      repository: registry.k8s.io/build-image/debian-iptables
+      pullPolicy: IfNotPresent
+      tag: bookworm-v1.0.0
+
   dtls:
     enabled: false
 
