@@ -139,17 +139,36 @@ spec:
         # remote peer's return DTLS handshake. Runs in the host
         # netns because the pod is hostNetwork. See WPB-26112.
         - name: pin-federation-sport
-          image: "{{ .Values.externalIpHelper.image.repository }}:{{ .Values.externalIpHelper.image.tag }}"
-          imagePullPolicy: {{ .Values.externalIpHelper.image.pullPolicy }}
+          {{- with .Values.federate.snat.image }}
+          image: {{ .repository }}:{{ .tag }}
+          imagePullPolicy: {{ .pullPolicy }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.initResources | nindent 12 }}
           command: ['/bin/sh', '-c']
           args:
             - |
-              apk add --no-cache iptables conntrack-tools
+              set -eu
               P={{ .Values.federate.port }}
-              iptables-nft -t nat -C POSTROUTING -p udp --sport $P -j SNAT --to-source "$NODE_IP:$P" 2>/dev/null || {
-                iptables-nft -t nat -I POSTROUTING 1 -p udp --sport $P -j SNAT --to-source "$NODE_IP:$P"
-                conntrack -D -p udp --orig-port-src $P || true
-              }
+              RULE="-p udp --sport $P -j SNAT --to-source $NODE_IP:$P"
+              log() { echo "[pin-federation-sport] $*"; }
+
+              log "pinning UDP source port $P to $NODE_IP:$P in nat/POSTROUTING"
+              if iptables-nft -t nat -C POSTROUTING $RULE 2>/dev/null; then
+                log "rule already present, leaving it in place: $RULE"
+              else
+                log "rule missing, inserting at POSTROUTING position 1: $RULE"
+                iptables-nft -t nat -I POSTROUTING 1 $RULE
+                log "flushing stale conntrack entries for udp src port $P"
+                if conntrack -D -p udp --orig-port-src "$P" 2>/dev/null; then
+                  log "conntrack entries flushed"
+                else
+                  log "no matching conntrack entries (nothing to flush)"
+                fi
+              fi
+
+              log "resulting nat/POSTROUTING chain:"
+              iptables-nft -t nat -L POSTROUTING -n -v --line-numbers
           env:
             - name: NODE_IP
               valueFrom:
