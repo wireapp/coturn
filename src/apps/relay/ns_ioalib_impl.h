@@ -187,6 +187,7 @@ struct _ioa_socket {
   ioa_timer_handle federation_handshake_tmr;
   ioa_timer_handle federation_heartbeat_tmr;
   int federation_heartbeat_pings_outstanding;
+  int federation_established_registered; /* socket is in the federation peers-by-ip index */
   uint32_t ssl_renegs;
   int in_write;
   int bound;

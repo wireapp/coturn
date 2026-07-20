@@ -26,6 +26,8 @@ void federation_whitelist_add(char* hostname, char* issuer);
 void federation_start_handshake_timer(ioa_socket_handle s);
 void federation_start_client_heartbeat_timer(ioa_socket_handle s);
 void federation_start_server_heartbeat_timer(ioa_socket_handle s);
+void federation_register_established_peer(ioa_socket_handle s);
+void federation_unregister_established_peer(ioa_socket_handle s);
 
 ///////////////////////////////////////////
 

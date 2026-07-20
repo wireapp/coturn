@@ -1283,7 +1283,14 @@ void add_socket_to_map(ioa_socket_handle s, ur_addr_map *amap) {
   }
 }
 
+/* federation.c - remove socket from the established-peer index (no-op unless
+ * the socket was registered there; see federation_register_established_peer) */
+void federation_unregister_established_peer(ioa_socket_handle s);
+
 void delete_socket_from_map(ioa_socket_handle s) {
+  if (s) {
+    federation_unregister_established_peer(s);
+  }
   if (s && s->sockets_container) {
 
     ur_addr_map_del(s->sockets_container, &(s->remote_addr), NULL);
