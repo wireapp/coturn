@@ -655,7 +655,7 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
       if(!secret)
         continue;
 
-      if(stun_calculate_hmac(usname, strlen((char*)usname), (const uint8_t *)secret, strlen(secret), hmac, &hmac_len, SHATYPE_SHA512)!=0)
+      if(!stun_calculate_hmac(usname, strlen((char*)usname), (const uint8_t *)secret, strlen(secret), hmac, &hmac_len, SHATYPE_SHA512))
         continue;
 
       pwd = base64_encode(hmac, hmac_len, &pwd_len);
@@ -666,7 +666,7 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
         continue;
       }
 
-      if(stun_produce_integrity_key_str((uint8_t *)usname, realm, (uint8_t *)pwd, key, SHATYPE_DEFAULT)!=0) {
+      if(!stun_produce_integrity_key_str((uint8_t *)usname, realm, (uint8_t *)pwd, key, SHATYPE_DEFAULT)) {
         free(pwd);
         continue;
       }
