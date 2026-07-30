@@ -23,13 +23,10 @@ externalIpHelper:
 # important that they run on disjoint sets of nodes, you can use nodeSelector to enforce this
 nodeSelector: {}
 
-# Limiting memory usage to ~90% of the available memory on a 8Gb node which is used for coturn pods by default.
-# This is to prevent the pod from being OOM kill
 resources:
   requests:
-    memory: 512Mi
-  limits:
-    memory: 6.5Gi
+    cpu: 500m
+    memory: 256Mi
 
 initResources:
   requests:
