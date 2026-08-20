@@ -17,6 +17,17 @@
 , mongoc
 }:
 
+let
+  # mongoc-config.h records the absolute path of the compiler in MONGOC_CC,
+  # which makes gcc and its wrapper -- about 250MB -- a runtime reference of
+  # everything that links mongoc, this image included.
+  mongoc-without-cc-reference = mongoc.overrideAttrs (old: {
+    postFixup = (old.postFixup or "") + ''
+      substituteInPlace $out/include/libmongoc-1.0/mongoc/mongoc-config.h \
+        --replace-fail '"${stdenv.cc}/bin/gcc"' '"gcc"'
+    '';
+  });
+in
 stdenv.mkDerivation {
   pname = "coturn";
   version = "wireapp-4.6.2";
@@ -33,7 +44,7 @@ stdenv.mkDerivation {
     postgresql
     libmysqlclient
     hiredis
-    mongoc
+    mongoc-without-cc-reference
     prometheus-client-c
   ];
 
