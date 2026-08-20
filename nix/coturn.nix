@@ -37,6 +37,23 @@ stdenv.mkDerivation {
     prometheus-client-c
   ];
 
+  # This is a 4.6.2-era codebase, and gcc 14 promotes several of the sloppy C
+  # constructs in it to hard errors: an out-of-order typedef in
+  # ns_turn_maps.h (ur_addr_map_value_type is used at line 51 but only defined
+  # at line 160), plus a char[] initialised from NULL, a missing prototype and
+  # an array-vs-pointer argument in the ratelimit patch. Debian bullseye's
+  # gcc 10, which docker/coturn/debian/Dockerfile builds with, accepts all of
+  # them as warnings. Keep it that way rather than patching the source, so this
+  # builds the same binary the image has always shipped.
+  env.NIX_CFLAGS_COMPILE = toString [
+    "-Wno-error=declaration-missing-parameter-type"
+    "-Wno-error=implicit-function-declaration"
+    "-Wno-error=implicit-int"
+    "-Wno-error=incompatible-pointer-types"
+    "-Wno-error=int-conversion"
+    "-Wno-error=return-mismatch"
+  ];
+
   # coturn ships a hand written ./configure that wants to drop temporary files
   # in /var/tmp or /tmp, neither of which exists in the build sandbox.
   postPatch = ''
