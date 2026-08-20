@@ -79,6 +79,14 @@ stdenv.mkDerivation {
 
   installFlags = [ "DESTDIR=${placeholder "out"}" ];
 
+  # The binaries land in $out/usr/bin, which nixpkgs' default strip list does
+  # not cover. Leaving them unstripped keeps the debug info that coturn builds
+  # with (-g), and that debug info still contains every
+  # -I/nix/store/...-dev/include the compiler was invoked with. Nix scans those
+  # strings and records them as runtime references, which pulls postgresql --
+  # and with it clang, llvm and gcc, about 2GB -- into the image.
+  stripDebugList = [ "usr/bin" "usr/lib" ];
+
   postInstall = ''
     rm -rf $out/tmp
 

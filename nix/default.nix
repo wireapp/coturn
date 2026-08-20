@@ -65,7 +65,13 @@ let
 
     dockerTools.binSh
     dockerTools.usrBinEnv
-    dockerTools.fakeNss
+
+    # The images run as `nobody:nogroup` (as the Dockerfiles do), but fakeNss
+    # only creates a `nobody` group, and a container whose group cannot be
+    # resolved fails to start. 65534 is the gid debian's nogroup has.
+    (dockerTools.fakeNss.override {
+      extraGroupLines = [ "nogroup:x:65534:" ];
+    })
   ];
 
   mkImage = { name, contents }: dockerTools.buildLayeredImage {
