@@ -39,9 +39,9 @@ data:
     pidfile="/var/tmp/turnserver.pid"
 
     ## turn, stun.
-    listening-ip={{ default "__COTURN_EXT_IP__" .Values.coturnTurnListenIP }}
+    listening-ip={{ include "coturn.listenIp" . }}
     listening-port={{ .Values.coturnTurnListenPort }}
-    relay-ip={{ default "__COTURN_EXT_IP__" .Values.coturnTurnRelayIP }}
+    relay-ip={{ include "coturn.relayIp" . }}
     {{- if .Values.coturnTurnExternalIP }}
     external-ip={{ default "__COTURN_EXT_IP__" .Values.coturnTurnExternalIP }}
     {{- end }}
@@ -109,7 +109,7 @@ data:
 
     {{- if .Values.federate.enabled }}
     ### federation setup
-    federation-listening-ip={{ default "__COTURN_EXT_IP__" .Values.coturnFederationListeningIP }}
+    federation-listening-ip={{ include "coturn.federationListenIp" . }}
     federation-listening-port={{ .Values.federate.port }}
     federation-no-dtls={{ not .Values.federate.dtls.enabled }}
     {{- if .Values.federate.dtls.enabled }}

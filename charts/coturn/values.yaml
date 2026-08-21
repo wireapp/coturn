@@ -138,8 +138,11 @@ coturnTurnExternalIP: null
 
 # federation-listening-ip: the address coturn's federation (server-to-server)
 # listener binds to, on federate.port. Same interface constraint and placeholder
-# meaning as listening-ip. Only rendered when federate.enabled. Unset defaults to
-# __COTURN_EXT_IP__.
+# meaning as listening-ip. Only rendered when federate.enabled. Unset inherits
+# the effective coturnTurnListenIP (which itself defaults to __COTURN_EXT_IP__),
+# so a host-bound TURN listener also host-binds federation. Set this explicitly
+# (e.g. to __COTURN_EXT_IP__) only when federation needs a different interface
+# than the main listener.
 # coturnFederationListeningIP:
 
 tls:
