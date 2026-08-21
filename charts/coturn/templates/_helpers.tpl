@@ -55,9 +55,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 Whether the rendered coturn config references the __COTURN_EXT_IP__ placeholder,
-i.e. depends on the node's discovered external IP. This is the case when
-listening-ip or relay-ip fall back to the placeholder (their unset default), or
-when external-ip is explicitly pinned to it. Returns "true" or "".
+i.e. depends on the node's discovered external IP. This drives whether the
+get-external-ip helper (and its node-read RBAC) is included. True when
+listening-ip/relay-ip (or, with federation enabled, federation-listening-ip)
+fall back to the placeholder because their override is unset, or when
+external-ip embeds it (including the PUBLIC/PRIVATE form). Returns "true" or "".
 */}}
 {{- define "coturn.usesExternalIpPlaceholder" -}}
 {{- $ph := "__COTURN_EXT_IP__" -}}
@@ -80,19 +82,4 @@ when external-ip is explicitly pinned to it. Returns "true" or "".
 {{- end -}}
 {{- end -}}
 {{- if $found -}}true{{- end -}}
-{{- end -}}
-
-{{/*
-Resolve whether the get-external-ip helper should run. externalIpHelper.enabled
-is tri-state: null (default) auto-detects from whether __COTURN_EXT_IP__ is
-actually used; an explicit true/false overrides the auto-detection.
-Returns "true" or "".
-*/}}
-{{- define "coturn.externalIpHelperEnabled" -}}
-{{- $e := .Values.externalIpHelper.enabled -}}
-{{- if kindIs "invalid" $e -}}
-{{- include "coturn.usesExternalIpPlaceholder" . -}}
-{{- else if $e -}}
-true
-{{- end -}}
 {{- end -}}

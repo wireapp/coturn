@@ -1,6 +1,3 @@
-{{- if and (include "coturn.usesExternalIpPlaceholder" .) (not (include "coturn.externalIpHelperEnabled" .)) -}}
-{{- fail "__COTURN_EXT_IP__ is used by listening-ip/relay-ip/external-ip/federation-listening-ip but externalIpHelper is disabled. Set coturnTurnListenIP/coturnTurnRelayIP (and coturnFederationListeningIP if federating) to a concrete value (e.g. __COTURN_HOST_IP__) or enable externalIpHelper." -}}
-{{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -85,9 +82,9 @@ spec:
           configMap:
             name: coturn-allowlist
         {{- end }}
-      {{- if or (include "coturn.externalIpHelperEnabled" .) (and .Values.federate.enabled .Values.federate.snat.enabled) }}
+      {{- if or (include "coturn.usesExternalIpPlaceholder" .) (and .Values.federate.enabled .Values.federate.snat.enabled) }}
       initContainers:
-        {{- if include "coturn.externalIpHelperEnabled" . }}
+        {{- if include "coturn.usesExternalIpPlaceholder" . }}
         - name: get-external-ip
           {{- with .Values.externalIpHelper.image }}
           image: {{ .repository }}:{{ .tag }}
@@ -247,9 +244,10 @@ spec:
             - |
               set -e
               # /external-ip/ip is only populated when the get-external-ip
-              # init container runs (externalIpHelper.enabled). When it is
-              # disabled the file is absent and __COTURN_EXT_IP__ is left empty,
-              # so listening-ip/relay-ip must be set explicitly (e.g. to
+              # init container runs (i.e. when the config references
+              # __COTURN_EXT_IP__). Otherwise the file is absent and
+              # __COTURN_EXT_IP__ resolves to empty, which is fine because
+              # listening-ip/relay-ip are then set explicitly (e.g. to
               # __COTURN_HOST_IP__) via values.
               EXTERNAL_IP=$(cat /external-ip/ip 2>/dev/null || true)
               sed -Ee "s;__COTURN_EXT_IP__;$EXTERNAL_IP;g" -e "s;__COTURN_POD_IP__;$POD_IP;g" -e "s;__COTURN_HOST_IP__;$HOST_IP;g" /coturn-template/coturn.conf.template > /coturn-config/turnserver.conf

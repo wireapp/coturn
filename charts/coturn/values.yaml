@@ -11,27 +11,20 @@ image:
   tag: ""
 
 externalIpHelper:
-  # Runs an init container that discovers the node's external IP (via the
-  # node's ExternalIP address, or it's `wire.com/external-ip` annotation)
-  # and writes it to a shared volume for use as __COTURN_EXT_IP__.
+  # Configures the init container that discovers the node's external IP (via the
+  # node's ExternalIP address, or it's `wire.com/external-ip` annotation) and
+  # writes it to a shared volume for use as __COTURN_EXT_IP__.
   #
-  # Tri-state:
-  #   null  (default) auto: the helper runs only when __COTURN_EXT_IP__ is
-  #         actually referenced by the rendered config, i.e. when
-  #         listening-ip/relay-ip (or, with federation enabled,
-  #         federation-listening-ip) fall back to their default because the
-  #         matching override is unset, or when coturnTurnExternalIP embeds the
-  #         placeholder (including the PUBLIC/PRIVATE form
-  #         __COTURN_EXT_IP__/__COTURN_HOST_IP__).
-  #   true  force the helper on.
-  #   false force the helper off. If any directive still resolves to
-  #         __COTURN_EXT_IP__ the chart fails to render with a clear message.
+  # The helper is enabled automatically: it runs only when __COTURN_EXT_IP__ is
+  # actually referenced by the rendered config, i.e. when listening-ip/relay-ip
+  # (or, with federation enabled, federation-listening-ip) fall back to their
+  # default because the matching override is unset, or when coturnTurnExternalIP
+  # embeds the placeholder (including the PUBLIC/PRIVATE form
+  # __COTURN_EXT_IP__/__COTURN_HOST_IP__). When clients reach coturn directly at
+  # the node's own interface IP, bind using __COTURN_HOST_IP__ via
+  # coturnTurnListenIP / coturnTurnRelayIP and the helper (and its node-read
+  # RBAC and blocking startup probe) drops out on its own.
   #
-  # When clients reach coturn directly at the node's own interface IP there is
-  # no separate public address to discover: bind directly using
-  # __COTURN_HOST_IP__ via coturnTurnListenIP / coturnTurnRelayIP and the helper
-  # (and its node-read RBAC and 5-minute blocking retry) drops out automatically.
-  enabled: null
   # The image used for the initContainer that determines the external IP address of the node.
   # This is a very small image that just contains kubectl, and is only used during startup.
   # We chose the `compat` flavor of the image since we need a shell to run the command that determines the external IP address, and the `compat` image includes a shell.
