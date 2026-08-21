@@ -11,6 +11,24 @@ image:
   tag: ""
 
 externalIpHelper:
+  # Runs an init container that discovers the node's external IP (via the
+  # node's ExternalIP address, or it's `wire.com/external-ip` annotation)
+  # and writes it to a shared volume for use as __COTURN_EXT_IP__.
+  #
+  # Tri-state:
+  #   null  (default) auto: the helper runs only when __COTURN_EXT_IP__ is
+  #         actually used, i.e. when listening-ip/relay-ip fall back to their
+  #         default (unset coturnTurnListenIP/coturnTurnRelayIP) or when
+  #         coturnTurnExternalIP is pinned to __COTURN_EXT_IP__.
+  #   true  force the helper on.
+  #   false force the helper off. If any directive still resolves to
+  #         __COTURN_EXT_IP__ the chart fails to render with a clear message.
+  #
+  # When clients reach coturn directly at the node's own interface IP there is
+  # no separate public address to discover: bind directly using
+  # __COTURN_HOST_IP__ via coturnTurnListenIP / coturnTurnRelayIP and the helper
+  # (and its node-read RBAC and 5-minute blocking retry) drops out automatically.
+  enabled: null
   # The image used for the initContainer that determines the external IP address of the node.
   # This is a very small image that just contains kubectl, and is only used during startup.
   # We chose the `compat` flavor of the image since we need a shell to run the command that determines the external IP address, and the `compat` image includes a shell.
@@ -46,9 +64,67 @@ coturnTurnListenPort: 3478
 coturnMetricsListenPort: 9641
 coturnTurnTlsListenPort: 5349
 
-# coturnTurnListenIP: "1.2.3.4" # can also be __COTURN_EXT_IP__, __COTURN_POD_IP__,__COTURN_HOST_IP__
-coturnTurnExternalIP: null
+# IP address configuration for coturn's listeners and advertised addresses.
+#
+# Each of the settings below accepts either a literal IP, or one of three
+# placeholder tokens that are resolved at pod startup:
+#
+#   __COTURN_HOST_IP__  the node's IP from the downward API (status.hostIP).
+#                       With hostNetwork this is the node's primary interface
+#                       IP. Always available, no RBAC, no discovery step.
+#   __COTURN_POD_IP__   the pod IP from the downward API (status.podIP). With
+#                       hostNetwork this equals __COTURN_HOST_IP__.
+#   __COTURN_EXT_IP__   the node's *external* IP discovered by the
+#                       externalIpHelper init container (cloud ExternalIP or the
+#                       `wire.com/external-ip` annotation on-prem). This is the
+#                       client-reachable address whenever it differs from the
+#                       primary interface IP (status.hostIP). It requires the
+#                       helper (node-read RBAC + a blocking startup probe). See
+#                       externalIpHelper above.
+#
+# The external address can differ from __COTURN_HOST_IP__ for two distinct
+# reasons, and they call for different settings:
+#
+#   (a) 1:1 NAT / mapped public IP (typical cloud EIP): the external address is
+#       NOT configured on any node interface. coturn must bind to the private
+#       interface (__COTURN_HOST_IP__) and only *advertise* the public address
+#       via external-ip. Binding listening-ip to it would fail.
+#   (b) Multi-homed node with the public IP on a second interface: the external
+#       address is a real, locally-configured address, just not the primary one
+#       status.hostIP reports. There is no NAT: bind listening-ip/relay-ip
+#       directly to __COTURN_EXT_IP__, and external-ip is unnecessary. Here the
+#       helper is selecting among the node's own interfaces, not bridging NAT,
+#       which is why the downward API's single hostIP cannot supply it.
+#
+# Rule of thumb: if clients reach coturn at the node's primary interface IP, use
+# __COTURN_HOST_IP__ everywhere and leave the helper off. Use __COTURN_EXT_IP__
+# when the client-reachable address is not that primary interface IP, whether
+# because it lives on another interface (b, bind to it) or behind NAT (a,
+# advertise it).
+
+# listening-ip: the address coturn binds its STUN/TURN sockets to. It must be an
+# address actually present on a node interface. In the multi-homed case (b) that
+# is the public interface, so set it to __COTURN_EXT_IP__. Behind NAT (a) the
+# public address is not on any interface, so bind to __COTURN_HOST_IP__ instead
+# and advertise via external-ip. Unset defaults to __COTURN_EXT_IP__.
+# coturnTurnListenIP: "1.2.3.4" # or __COTURN_EXT_IP__ / __COTURN_POD_IP__ / __COTURN_HOST_IP__
+
+# relay-ip: the address coturn allocates relay sockets on. Same constraint as
+# listening-ip (must exist on a node interface). Usually the same as
+# listening-ip. Unset defaults to __COTURN_EXT_IP__.
 # coturnTurnRelayIP:
+
+# external-ip: the address coturn *advertises* to clients (XOR-RELAYED-ADDRESS /
+# reflexive address), as opposed to the one it binds to. Only needed in the NAT
+# case (a), where the advertised (public) address differs from the bound
+# (private) one: set it to the public IP (or __COTURN_EXT_IP__) while
+# listening-ip/relay-ip stay on __COTURN_HOST_IP__. Not needed when coturn binds
+# directly to the client-reachable address, i.e. direct-reachable nodes or the
+# multi-homed case (b), where it would just duplicate listening-ip; leave it
+# null there. Setting __COTURN_EXT_IP__ advertises the helper-discovered IP;
+# a literal IP is advertised verbatim; null emits no external-ip directive.
+coturnTurnExternalIP: null
+
 # coturnPrometheusIP:
 # coturnFederationListeningIP:
 
