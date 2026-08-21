@@ -105,8 +105,13 @@ federate:
   port: 9191
 
   snat:
-    # Preserve the federation source port through node-level SNAT. This requires
-    # a privileged init container and should only be enabled where needed.
+    # Targeted mitigation for a proven node-level conntrack/SNAT clash on the
+    # federation path. Do not enable merely because coturn runs on Kubernetes
+    # or behind NAT. Enable only after packet capture or conntrack evidence
+    # shows that node SNAT rewrites the source port and fragments the peer's
+    # DTLS ClientHello into multiple apparent source ports. Stable translated
+    # source ports do not need this option. This adds a privileged init
+    # container with NET_ADMIN and pins sport 9191 to the node IP.
     enabled: false
     # Must ship iptables-nft and conntrack (no runtime install, works air-gapped).
     image:
@@ -118,6 +123,11 @@ federate:
     enabled: false
 
     tls:
+      # Keep the optional certificate map defined so issuerRef-only values
+      # render without a nil lookup in the chart template.
+      certificate:
+        dnsNames: []
+        labels: {}
     #   Example:
     #
     #   tls:
