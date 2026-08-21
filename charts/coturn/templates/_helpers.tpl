@@ -61,11 +61,25 @@ when external-ip is explicitly pinned to it. Returns "true" or "".
 */}}
 {{- define "coturn.usesExternalIpPlaceholder" -}}
 {{- $ph := "__COTURN_EXT_IP__" -}}
-{{- $listen := default $ph .Values.coturnTurnListenIP -}}
-{{- $relay := default $ph .Values.coturnTurnRelayIP -}}
-{{- if or (eq $listen $ph) (eq $relay $ph) (and .Values.coturnTurnExternalIP (eq .Values.coturnTurnExternalIP $ph)) -}}
-true
+{{/* listening-ip and relay-ip fall back to the placeholder when unset. */}}
+{{- $vals := list (default $ph .Values.coturnTurnListenIP) (default $ph .Values.coturnTurnRelayIP) -}}
+{{/* external-ip only renders when set; it may embed the placeholder in the
+     public/private form, e.g. __COTURN_EXT_IP__/__COTURN_HOST_IP__. */}}
+{{- if .Values.coturnTurnExternalIP -}}
+{{- $vals = append $vals .Values.coturnTurnExternalIP -}}
 {{- end -}}
+{{/* federation-listening-ip also falls back to the placeholder, but only when
+     federation is enabled. */}}
+{{- if .Values.federate.enabled -}}
+{{- $vals = append $vals (default $ph .Values.coturnFederationListeningIP) -}}
+{{- end -}}
+{{- $found := false -}}
+{{- range $v := $vals -}}
+{{- if contains $ph (toString $v) -}}
+{{- $found = true -}}
+{{- end -}}
+{{- end -}}
+{{- if $found -}}true{{- end -}}
 {{- end -}}
 
 {{/*

@@ -17,9 +17,12 @@ externalIpHelper:
   #
   # Tri-state:
   #   null  (default) auto: the helper runs only when __COTURN_EXT_IP__ is
-  #         actually used, i.e. when listening-ip/relay-ip fall back to their
-  #         default (unset coturnTurnListenIP/coturnTurnRelayIP) or when
-  #         coturnTurnExternalIP is pinned to __COTURN_EXT_IP__.
+  #         actually referenced by the rendered config, i.e. when
+  #         listening-ip/relay-ip (or, with federation enabled,
+  #         federation-listening-ip) fall back to their default because the
+  #         matching override is unset, or when coturnTurnExternalIP embeds the
+  #         placeholder (including the PUBLIC/PRIVATE form
+  #         __COTURN_EXT_IP__/__COTURN_HOST_IP__).
   #   true  force the helper on.
   #   false force the helper off. If any directive still resolves to
   #         __COTURN_EXT_IP__ the chart fails to render with a clear message.
@@ -123,9 +126,27 @@ coturnTurnTlsListenPort: 5349
 # multi-homed case (b), where it would just duplicate listening-ip; leave it
 # null there. Setting __COTURN_EXT_IP__ advertises the helper-discovered IP;
 # a literal IP is advertised verbatim; null emits no external-ip directive.
+#
+# Two forms:
+#   external-ip=PUBLIC          maps PUBLIC onto every relay address. Only valid
+#                               with a single relay address and no RFC5780.
+#   external-ip=PUBLIC/PRIVATE  explicit mapping: the socket bound to the local
+#                               address PRIVATE is advertised as PUBLIC. Required
+#                               once more than one address is in play, which is
+#                               the case with federation enabled (it adds
+#                               federation-listening-ip as a second address). The
+#                               common federation value is
+#                               __COTURN_EXT_IP__/__COTURN_HOST_IP__: bind to the
+#                               node's host IP, advertise the discovered public
+#                               IP.
 coturnTurnExternalIP: null
 
 # coturnPrometheusIP:
+
+# federation-listening-ip: the address coturn's federation (server-to-server)
+# listener binds to, on federate.port. Same interface constraint and placeholder
+# meaning as listening-ip. Only rendered when federate.enabled. Unset defaults to
+# __COTURN_EXT_IP__.
 # coturnFederationListeningIP:
 
 tls:

@@ -1,5 +1,5 @@
 {{- if and (include "coturn.usesExternalIpPlaceholder" .) (not (include "coturn.externalIpHelperEnabled" .)) -}}
-{{- fail "__COTURN_EXT_IP__ is used by listening-ip/relay-ip/external-ip but externalIpHelper is disabled. Set coturnTurnListenIP/coturnTurnRelayIP to a concrete value (e.g. __COTURN_HOST_IP__) or enable externalIpHelper." -}}
+{{- fail "__COTURN_EXT_IP__ is used by listening-ip/relay-ip/external-ip/federation-listening-ip but externalIpHelper is disabled. Set coturnTurnListenIP/coturnTurnRelayIP (and coturnFederationListeningIP if federating) to a concrete value (e.g. __COTURN_HOST_IP__) or enable externalIpHelper." -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
