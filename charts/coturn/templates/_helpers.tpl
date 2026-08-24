@@ -88,6 +88,11 @@ external-ip embeds it (including the PUBLIC/PRIVATE form). Returns "true" or "".
 {{- if .Values.coturnTurnExternalIP -}}
 {{- $vals = append $vals .Values.coturnTurnExternalIP -}}
 {{- end -}}
+{{/* prometheus-ip defaults to __COTURN_POD_IP__, so it only references the
+     external placeholder when explicitly set to it. */}}
+{{- if .Values.coturnPrometheusIP -}}
+{{- $vals = append $vals .Values.coturnPrometheusIP -}}
+{{- end -}}
 {{/* federation-listening-ip inherits listening-ip, but only matters when
      federation is enabled. */}}
 {{- if .Values.federate.enabled -}}

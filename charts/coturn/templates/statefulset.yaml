@@ -245,11 +245,14 @@ spec:
               set -e
               # /external-ip/ip is only populated when the get-external-ip
               # init container runs (i.e. when the config references
-              # __COTURN_EXT_IP__). Otherwise the file is absent and
-              # __COTURN_EXT_IP__ resolves to empty, which is fine because
-              # listening-ip/relay-ip are then set explicitly (e.g. to
-              # __COTURN_HOST_IP__) via values.
-              EXTERNAL_IP=$(cat /external-ip/ip 2>/dev/null || true)
+              # __COTURN_EXT_IP__). Read it there and let set -e fail loudly if
+              # it is missing; otherwise the placeholder is unused and
+              # __COTURN_EXT_IP__ resolves to empty.
+              {{- if include "coturn.usesExternalIpPlaceholder" . }}
+              EXTERNAL_IP=$(cat /external-ip/ip)
+              {{- else }}
+              EXTERNAL_IP=""
+              {{- end }}
               sed -Ee "s;__COTURN_EXT_IP__;$EXTERNAL_IP;g" -e "s;__COTURN_POD_IP__;$POD_IP;g" -e "s;__COTURN_HOST_IP__;$HOST_IP;g" /coturn-template/coturn.conf.template > /coturn-config/turnserver.conf
               sed -Ee 's/^/static-auth-secret=/' /secrets/zrest_secret.txt >> /coturn-config/turnserver.conf
               exec /usr/bin/turnserver -c /coturn-config/turnserver.conf
