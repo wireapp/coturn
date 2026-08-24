@@ -82,7 +82,9 @@ spec:
           configMap:
             name: coturn-allowlist
         {{- end }}
+      {{- if or (include "coturn.usesExternalIpPlaceholder" .) (and .Values.federate.enabled .Values.federate.snat.enabled) }}
       initContainers:
+        {{- if include "coturn.usesExternalIpPlaceholder" . }}
         - name: get-external-ip
           {{- with .Values.externalIpHelper.image }}
           image: {{ .repository }}:{{ .tag }}
@@ -133,6 +135,7 @@ spec:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 65534 # non-root user in alpine
+        {{- end }}
         {{- if and .Values.federate.enabled .Values.federate.snat.enabled }}
         # Pin the federation source port on node egress so the node SNAT
         # (e.g. AWS VPC CNI --random-fully) does not randomize it and break the
@@ -179,6 +182,7 @@ spec:
             capabilities:
               add: ["NET_ADMIN"]
         {{- end }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository}}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -239,7 +243,16 @@ spec:
             - -c
             - |
               set -e
+              # /external-ip/ip is only populated when the get-external-ip
+              # init container runs (i.e. when the config references
+              # __COTURN_EXT_IP__). Read it there and let set -e fail loudly if
+              # it is missing; otherwise the placeholder is unused and
+              # __COTURN_EXT_IP__ resolves to empty.
+              {{- if include "coturn.usesExternalIpPlaceholder" . }}
               EXTERNAL_IP=$(cat /external-ip/ip)
+              {{- else }}
+              EXTERNAL_IP=""
+              {{- end }}
               sed -Ee "s;__COTURN_EXT_IP__;$EXTERNAL_IP;g" -e "s;__COTURN_POD_IP__;$POD_IP;g" -e "s;__COTURN_HOST_IP__;$HOST_IP;g" /coturn-template/coturn.conf.template > /coturn-config/turnserver.conf
               sed -Ee 's/^/static-auth-secret=/' /secrets/zrest_secret.txt >> /coturn-config/turnserver.conf
               exec /usr/bin/turnserver -c /coturn-config/turnserver.conf
