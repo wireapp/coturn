@@ -11,9 +11,9 @@
 , libmicrohttpd
 }:
 
-stdenv.mkDerivation (finalAttrs: {
+stdenv.mkDerivation {
   pname = "prometheus-client-c";
-  version = "0-unstable-2023-01-30";
+  version = "unstable-2022-03-18";
 
   src = fetchFromGitHub {
     owner = "wireapp";
@@ -68,4 +68,4 @@ stdenv.mkDerivation (finalAttrs: {
     description = "Prometheus client library in C, wire fork used by coturn";
     homepage = "https://github.com/wireapp/prometheus-client-c";
   };
-})
+}
