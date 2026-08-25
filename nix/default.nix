@@ -10,6 +10,8 @@
 # `pkgs` and `src` are passed in by cailleach, which owns the nixpkgs pin:
 #
 #   nix-build ./nix/default.nix -A base-image --arg pkgs 'import <nixpkgs> {}'
+#
+# See ./README.md for building, testing and pushing these by hand.
 { pkgs
 , src ? ../.
 }:
