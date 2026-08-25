@@ -187,6 +187,15 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository}}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            capabilities:
+              add:
+                # turnserver runs as a non-root user but binds the privileged
+                # port 3478. The debian image carried this as a file capability
+                # (setcap) on /usr/bin/turnserver; the nix-built image cannot,
+                # since a nix build sandbox has no CAP_SETFCAP, so the
+                # capability is granted to the container instead.
+                - NET_BIND_SERVICE
           env:
             - name: POD_IP
               valueFrom:
