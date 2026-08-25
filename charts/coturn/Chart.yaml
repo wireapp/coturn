@@ -12,3 +12,18 @@ version: 0.0.43
 # incremented each time you make changes to the application. Versions are not expected to
 # follow Semantic Versioning. They should reflect the version the application is using.
 appVersion: 4.6.2-federation-wireapp.31
+annotations:
+  # must conform to https://github.com/helm/community/blob/main/hips/hip-0015.md
+  # The coturn tag below is a placeholder. cailleach's
+  # ci/tasks/scripts/publish-helm-chart.sh rewrites it to the published
+  # appVersion at package time. Do not write a real tag here, and do not repeat
+  # the placeholder string in a comment, the substitution is a global sed.
+  helm.sh/images: |
+    - name: coturn
+      image: quay.io/wire/coturn:do-not-use
+    - name: get-external-ip
+      image: docker.io/alpine/kubectl:1.35.1
+    - name: coturn-cert-reloader
+      image: quay.io/wire/config-reloader-sidecar:72c3c8434660bd157d42012b0bcd67f338fc5c7a
+    - name: pin-federation-sport
+      image: registry.k8s.io/build-image/debian-iptables:bookworm-v1.0.0
