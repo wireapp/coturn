@@ -118,6 +118,20 @@ spec:
                 fi
 
                 if [ -n "$addr" ]; then
+                  # The main container puts this value into a sed expression to
+                  # fill the config template. A character such as ";" would
+                  # become part of that expression instead of data, so sed would
+                  # fail and set -e would stop the container. Reject anything
+                  # that is not an IPv4 or IPv6 literal, and report it here
+                  # instead. The node ExternalIP field cannot hold such a value,
+                  # but the wire.com/external-ip annotation is free-form.
+                  case "$addr" in
+                    *[!0-9a-fA-F.:%]*)
+                      echo "Error: external IP \"$addr\" for node $NODE_NAME contains characters that an IP address cannot contain." >&2
+                      exit 1
+                      ;;
+                  esac
+
                   echo -n "$addr" | tee /dev/stderr > /external-ip/ip
                   break
                 fi
