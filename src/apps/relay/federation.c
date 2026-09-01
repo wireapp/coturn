@@ -521,6 +521,87 @@ void federation_init(ioa_engine_handle e) {
   federation_load_certificates();
 }
 
+// ---------------------------------------------------------------------------
+// Established-peer index: peer IP (port zeroed) -> established federation socket.
+//
+// The send path historically only looked up dest:9191 in children_ss and dialed
+// a brand-new outbound connection on a miss. When the peer sits behind a NAT
+// that rewrites our source port, the peer keys our tunnel under the rewritten
+// port, its own send path misses on dest:9191 and it dials back into us - a
+// redundant handshake that is also the one that fails behind port-rewriting
+// NATs (the dial's own NAT/conntrack entry occupies the local:9191->peer:9191
+// tuple, so the peer's inbound ClientHello gets rewritten to fresh source
+// ports and can never complete). This index lets the send path find ANY
+// established tunnel to the destination peer (typically the accepted,
+// peer-initiated one) and reuse it instead of dialing.
+//
+// Thread model: identical to children_ss. All accesses happen on the federation
+// listener thread - registration from handle_udp_packet, lookup from
+// federation_send_data_imp (marshaled there via the bufferevent pair), and
+// unregistration from close paths of federation child sockets, whose timers and
+// reads all run on the listener engine. Sockets of other threads never carry
+// the federation_established_registered flag, so their close path never touches
+// the map.
+static ur_addr_map *federation_peers_by_ip = NULL;
+
+static void federation_peer_ip_key(const ioa_addr *addr, ioa_addr *key) {
+  addr_cpy(key, addr);
+  addr_set_port(key, 0);
+}
+
+void federation_register_established_peer(ioa_socket_handle s) {
+  if (!s || !s->e) {
+    return;
+  }
+  if (!federation_peers_by_ip) {
+    federation_peers_by_ip = (ur_addr_map *)allocate_super_memory_engine(s->e, sizeof(ur_addr_map));
+    ur_addr_map_init(federation_peers_by_ip);
+  }
+  ioa_addr key;
+  federation_peer_ip_key(get_remote_addr_from_ioa_socket(s), &key);
+  // Last-wins: a newer established tunnel to the same peer replaces the entry.
+  ur_addr_map_put(federation_peers_by_ip, &key, (ur_addr_map_value_type)s);
+  s->federation_established_registered = 1;
+}
+
+void federation_unregister_established_peer(ioa_socket_handle s) {
+  if (!s || !s->federation_established_registered) {
+    return;
+  }
+  s->federation_established_registered = 0;
+  if (!federation_peers_by_ip) {
+    return;
+  }
+  ioa_addr key;
+  federation_peer_ip_key(get_remote_addr_from_ioa_socket(s), &key);
+  ur_addr_map_value_type mvt = 0;
+  // Only remove if the index still points at THIS socket - a newer established
+  // connection to the same peer may have replaced it.
+  if ((ur_addr_map_get(federation_peers_by_ip, &key, &mvt) > 0) && ((ioa_socket_handle)mvt == s)) {
+    ur_addr_map_del(federation_peers_by_ip, &key, NULL);
+  }
+}
+
+static ioa_socket_handle federation_find_established_by_peer_ip(const ioa_addr *dest_addr) {
+  if (!federation_peers_by_ip) {
+    return NULL;
+  }
+  ioa_addr key;
+  federation_peer_ip_key(dest_addr, &key);
+  ur_addr_map_value_type mvt = 0;
+  if (!(ur_addr_map_get(federation_peers_by_ip, &key, &mvt) > 0) || !mvt) {
+    return NULL;
+  }
+  ioa_socket_handle s = (ioa_socket_handle)mvt;
+  // Unregistration on close guarantees entries are never dangling, but the
+  // socket may be on its way out or mid-renegotiation; never hand those back.
+  if (ioa_socket_tobeclosed(s) || !s->ssl || !SSL_is_init_finished(s->ssl)) {
+    return NULL;
+  }
+  return s;
+}
+// ---------------------------------------------------------------------------
+
 int federation_send_data_imp(dtls_listener_relay_server_type* server, ioa_addr* dest_addr,
         ioa_network_buffer_handle nbh, int ttl, int tos, int* skip) {
   int fd = server->udp_listen_s->fd;
@@ -540,7 +621,21 @@ int federation_send_data_imp(dtls_listener_relay_server_type* server, ioa_addr* 
       chs = (ioa_socket_handle) mvt;
     }
 
-    if(chs == NULL) {      
+    if(chs == NULL) {
+      // No outbound connection keyed dest:9191. Before dialing, reuse any
+      // established tunnel to this peer - typically the accepted connection the
+      // peer dialed to us (its source port may have been rewritten by NAT, so
+      // it is keyed under a different tuple). DTLS application data flows both
+      // ways regardless of client/server role, and dialing here is both
+      // redundant and the handshake that fails behind port-rewriting NATs.
+      chs = federation_find_established_by_peer_ip(dest_addr);
+      if(chs) {
+        addr_debug_print(eve(server->verbose), get_remote_addr_from_ioa_socket(chs),
+                "Federation: reusing established tunnel instead of dialing, peer");
+      }
+    }
+
+    if(chs == NULL) {
       // No connection yet, DTLS connect to dest_addr
       SSL* ssl = SSL_new(turn_params.federation_dtls_client_ctx);
       SSL_set_options(ssl, SSL_OP_COOKIE_EXCHANGE);

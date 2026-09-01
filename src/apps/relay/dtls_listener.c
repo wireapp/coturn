@@ -359,12 +359,15 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
             //TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "%s: federation_listener: DTLS connection complete!\n", __FUNCTION__);
             IOA_EVENT_DEL(s->federation_handshake_tmr); // Stop federation handshake timer if running
             // We are connected now - start the heartbeat timer
-            s->federation_heartbeat_pings_outstanding  = 0; 
+            s->federation_heartbeat_pings_outstanding  = 0;
             if(SSL_is_server(s->ssl)) {
               federation_start_server_heartbeat_timer(s);
             } else {
               federation_start_client_heartbeat_timer(s);
             }
+            // Index this established tunnel by peer IP so the send path can
+            // reuse it instead of dialing a redundant connection to peer:9191.
+            federation_register_established_peer(s);
           }
 
           send_ssl_backlog_buffers(s); // Send any data packets that have been queued waiting for handshake to finish
