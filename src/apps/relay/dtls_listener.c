@@ -395,6 +395,17 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
   const int verbose = ioa_eng->verbose;
   ioa_socket_handle s = sm->m.sm.s;
 
+  {
+          char saddr[MAX_IOA_ADDR_STRING];
+	  char raddr[MAX_IOA_ADDR_STRING];
+	  addr_to_string(get_local_addr_from_ioa_socket(s), saddr);
+	  addr_to_string(get_remote_addr_from_ioa_socket(s), raddr);
+
+	  TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+			"%s: got DTLS packet on: %s from: %s\n",
+			__FUNCTION__, saddr, raddr);
+  }
+
   ur_addr_map_value_type mvt = 0;
 
   (void)packet_type;
@@ -542,6 +553,15 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
          (server->federation_listener && !turn_params.federation_no_dtls)) && 
         is_dtls_handshake_message(ioa_network_buffer_data(sm->m.sm.nd.nbh),
                                   (int)ioa_network_buffer_get_size(sm->m.sm.nd.nbh))) {
+          char saddr[MAX_IOA_ADDR_STRING];
+	  char raddr[MAX_IOA_ADDR_STRING];
+	  addr_to_string(get_local_addr_from_ioa_socket(s), saddr);
+	  addr_to_string(get_remote_addr_from_ioa_socket(s), raddr);
+
+	  TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+			"%s: calling dtls_server_input on: %s from: %s\n",
+			__FUNCTION__, saddr, raddr);
+	    
       chs = dtls_server_input_handler(server, s, sm->m.sm.nd.nbh);
       ioa_network_buffer_delete(server->e, sm->m.sm.nd.nbh);
       sm->m.sm.nd.nbh = NULL;
