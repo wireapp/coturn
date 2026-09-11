@@ -566,6 +566,9 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
       ioa_network_buffer_delete(server->e, sm->m.sm.nd.nbh);
       sm->m.sm.nd.nbh = NULL;
     }
+#else
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "$s: NO DTLS supported\n",
+		  __FUNCTION__, saddr, raddr);
 #endif
 
     if (!chs) {
