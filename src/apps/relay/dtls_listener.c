@@ -678,7 +678,7 @@ static int process_udp_datagram(dtls_listener_relay_server_type *server, ioa_soc
   return 0;
 }
 
-static udp_packet_classification_t classify_udp_packet(const uint8_t *data, size_t blen) {
+static udp_packet_classification_t classify_udp_packet(const uint8_t *data, size_t blen, bool use_dtls) {
   size_t candidate_len = blen;
   uint16_t chnum = 0;
   uint32_t old_stun_cookie = 0;
@@ -688,10 +688,10 @@ static udp_packet_classification_t classify_udp_packet(const uint8_t *data, size
     return UDP_PACKET_CLASS_STUN_OR_CHANNEL;
   }
 #if DTLS_SUPPORTED
-  if (!turn_params.no_dtls && is_dtls_handshake_message(data, (int)blen)) {
+  if (use_dtls && is_dtls_handshake_message(data, (int)blen)) {
     return UDP_PACKET_CLASS_DTLS_HANDSHAKE;
   }
-  if (!turn_params.no_dtls && is_dtls_message(data, (int)blen)) {
+  if (use_dtls && is_dtls_message(data, (int)blen)) {
     return UDP_PACKET_CLASS_DTLS_OTHER;
   }
 #endif
@@ -778,7 +778,9 @@ static int receive_udp_batch_recvmmsg(dtls_listener_relay_server_type *server, e
     ioa_network_buffer_set_size(state->elems[j], state->msgs[j].msg_len);
     ioa_parse_udp_recvmsg_cmsg(&(state->msgs[j].msg_hdr), &(state->ttls[j]), &(state->toss[j]), NULL);
     state->packet_types[j] =
-        classify_udp_packet(ioa_network_buffer_data(state->elems[j]), ioa_network_buffer_get_size(state->elems[j]));
+	    classify_udp_packet(ioa_network_buffer_data(state->elems[j]), ioa_network_buffer_get_size(state->elems[j]),
+				!turn_params.no_dtls || (server->federation_listener && !turn_params.federation_no_dtls));
+
   }
 
   return rc;
@@ -1083,7 +1085,9 @@ start_udp_cycle:
     udp_sendmmsg_batch_begin();
     process_udp_datagram(server, s, elem, &(server->sm.m.sm.nd.src_addr), bsize, server->sm.m.sm.nd.recv_ttl,
                          server->sm.m.sm.nd.recv_tos,
-                         (int)classify_udp_packet(ioa_network_buffer_data(elem), (size_t)bsize), &packets_processed,
+                         (int)classify_udp_packet(ioa_network_buffer_data(elem), (size_t)bsize,
+						  !turn_params.no_dtls || (server->federation_listener && !turn_params.federation_no_dtls)),
+			 &packets_processed,
                          &packets_dropped);
     udp_sendmmsg_batch_end();
   }
