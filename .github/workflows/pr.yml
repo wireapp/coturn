@@ -1,0 +1,117 @@
+name: PR
+
+on:
+  pull_request:
+    branches: [dev, release/*]
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    container: ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c
+    steps:
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            build-essential pkg-config \
+            libevent-dev libssl-dev \
+            libpq-dev libmariadb-dev libsqlite3-dev \
+            libhiredis-dev libmongoc-dev libmicrohttpd-dev
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          ./configure
+          make -j"$(nproc)"
+
+      - name: Unit tests
+        run: make check
+
+      - name: Client tests
+        working-directory: examples
+        run: ./run_tests.sh
+
+  chart:
+    name: Helm chart
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.19.0
+
+      - name: Lint and render the chart
+        run: |
+          set -euo pipefail
+          helm lint charts/coturn --set-string 'secrets.zrestSecrets[0]=lint'
+          helm template coturn charts/coturn --set-string 'secrets.zrestSecrets[0]=lint' > /dev/null
+
+  release-files:
+    name: Release files
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: touched
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet "$BASE_SHA" HEAD -- publication/; then
+            echo "publication/ is not touched by this PR."
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "touched=true" >> "$GITHUB_OUTPUT"
+          for f in publication/release-note.md publication/declaration.json publication/compatibility.yaml; do
+            [[ -s "$f" ]] || { echo "error: $f is missing or empty" >&2; exit 1; }
+          done
+          version=$(jq -r '.version // ""' publication/declaration.json)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: publication/declaration.json version '$version' is not a plain X.Y.Z (the base version of the next release)" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - if: steps.touched.outputs.touched == 'true'
+        uses: wireapp/wire-rm-actions/compatibility@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          file: publication/compatibility.yaml
+
+      - if: steps.touched.outputs.touched == 'true'
+        uses: wireapp/wire-rm-actions/release-declaration@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          file: publication/declaration.json
+          component: coturn
+          version: ${{ steps.touched.outputs.version }}
