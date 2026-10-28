@@ -49,6 +49,26 @@ jobs:
         working-directory: examples
         run: ./run_tests.sh
 
+  image:
+    name: Image
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image
+        run: docker build --file docker/Dockerfile --tag coturn:pr .
+
+      - name: Test the image
+        env:
+          IMAGE: coturn:pr
+        run: .github/scripts/test-image.sh
+
   chart:
     name: Helm chart
     runs-on: ubuntu-26.04
@@ -65,11 +85,20 @@ jobs:
         with:
           version: v3.19.0
 
+      - name: Package the chart
+        id: package
+        env:
+          VERSION: 0.0.0-pr
+          OUT_DIR: ${{ runner.temp }}/chart
+        run: .github/scripts/package-chart.sh
+
       - name: Lint and render the chart
+        env:
+          CHART_FILE: ${{ steps.package.outputs.file }}
         run: |
           set -euo pipefail
-          helm lint charts/coturn --set-string 'secrets.zrestSecrets[0]=lint'
-          helm template coturn charts/coturn --set-string 'secrets.zrestSecrets[0]=lint' > /dev/null
+          helm lint "$CHART_FILE" --set-string 'secrets.zrestSecrets[0]=lint'
+          helm template coturn "$CHART_FILE" --set-string 'secrets.zrestSecrets[0]=lint' > /dev/null
 
   release-files:
     name: Release files
