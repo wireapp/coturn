@@ -1,0 +1,31 @@
+providesApis:
+  - api: coturn/turn
+    versions: ["1.0.0"]
+    reason: Media relay for clients and, with multiSFT, for SFT servers.
+  - api: coturn/federation
+    versions: ["0.1.0"]
+    reason: Relay between the TURN servers of two backends for federated calls.
+
+consumesApis: []
+
+dependsOn:
+  - component: wire-server
+    range: ">=5.0.0"
+    class: mandatory
+    reason: brig hands clients the TURN URIs and credentials signed with the shared zrest secret.
+  - resource: public-ip
+    range: "*"
+    class: mandatory
+    reason: One routable address per replica and an open UDP relay port range.
+  - platform: kubernetes
+    range: ">=1.21.0"
+  - platform: cert-manager
+    range: "*"
+    class: optional
+    reason: TLS and federation DTLS certificates when no secretRef is given.
+  - platform: prometheus-operator
+    range: "*"
+    class: optional
+    reason: ServiceMonitor when metrics.serviceMonitor.enabled.
+
+includes: []

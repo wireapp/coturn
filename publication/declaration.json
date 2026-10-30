@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "wire.component-release/v1alpha2",
+  "component": "coturn",
+  "version": "5.6.0",
+  "summary": "coturn moves to the Wire release standard. Versions are SemVer from now on, starting at 5.6.0, and the image and the Helm chart share that version. The server is unchanged: it is the one of 4.6.2-federation-wireapp.59, upstream coturn 4.6.2 with the Wire patches.",
+  "upgrade_from": ">=4.6.2-federation-wireapp.55",
+  "changes": [
+    {
+      "kind": "changed",
+      "description": "Versioning: coturn is now versioned X.Y.Z, starting at 5.6.0, right after the 5.5.x coturn charts already published. The image quay.io/wire/coturn and the Helm chart carry the same version, and the chart is also published to oci://quay.io/wire/charts/stable/coturn. Pin coturn 5.6.0 instead of 4.6.2-federation-wireapp.N.",
+      "breaking": true,
+      "links": []
+    },
+    {
+      "kind": "changed",
+      "description": "The Helm chart declares kubeVersion >=1.21.0-0: on an older cluster the install fails straight away. Upgrade the cluster first.",
+      "breaking": true,
+      "links": []
+    },
+    {
+      "kind": "changed",
+      "description": "The image moves from Debian bullseye, out of support, to Debian bookworm, and coturn now links against OpenSSL 3 instead of OpenSSL 1.1. The server code and the chart defaults are unchanged.",
+      "breaking": false,
+      "links": []
+    }
+  ],
+  "migrations": [],
+  "configuration": []
+}
