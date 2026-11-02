@@ -18,6 +18,9 @@ jobs:
     permissions:
       contents: read
     container: ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Install dependencies
         env:
@@ -26,7 +29,7 @@ jobs:
           set -euo pipefail
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends \
-            build-essential pkg-config \
+            build-essential pkg-config git ca-certificates \
             libevent-dev libssl-dev \
             libpq-dev libmariadb-dev libsqlite3-dev \
             libhiredis-dev libmongoc-dev libmicrohttpd-dev
