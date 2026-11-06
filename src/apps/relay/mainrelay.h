@@ -299,6 +299,7 @@ typedef struct _turn_params_ {
   char federation_cert_file[1025];
   char federation_pkey_file[1025];
   char federation_pkey_pwd[513];
+  char federation_ca_cert_file[1025];
   SSL_CTX *federation_dtls_client_ctx;
   SSL_CTX *federation_dtls_server_ctx;
 
@@ -391,7 +392,7 @@ void send_auth_message_to_auth_server(struct auth_message *am);
 
 void set_ctx(SSL_CTX** out, const char* protocol, const SSL_METHOD* method);
 void set_ctx_ex(SSL_CTX** out, const char* protocol, const SSL_METHOD* method, const char* cert_file,
-                const char* pkey_file, char* pkey_pwd);
+                const char* pkey_file, char* pkey_pwd, const char* ca_file);
 void init_listener(void);
 void setup_server(void);
 void run_listener_server(struct listener_server *ls);

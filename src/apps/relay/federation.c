@@ -344,6 +344,11 @@ static const char *cipherlist =
   "DHE-RSA-AES256-SHA256:"
   "DHE-RSA-AES256-SHA";
 
+/* federation-CA-file, or CA-file for configurations from before federation-CA-file. */
+static const char* federation_ca_file(void) {
+  return turn_params.federation_ca_cert_file[0] ? turn_params.federation_ca_cert_file : turn_params.ca_cert_file;
+}
+
 static SSL_CTX* federation_setup_dtls_ctx(int isClient) {
   SSL_CTX* ssl_ctx = NULL;
 
@@ -353,20 +358,22 @@ static SSL_CTX* federation_setup_dtls_ctx(int isClient) {
              isClient == 0 ? DTLSv1_2_server_method() : DTLSv1_2_client_method(), 
              turn_params.federation_cert_file, 
              turn_params.federation_pkey_file, 
-             turn_params.federation_pkey_pwd);
+             turn_params.federation_pkey_pwd,
+             federation_ca_file());
   SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_DTLSv1);
 #else  // newer than 1.1.0
   set_ctx_ex(&ssl_ctx,"Federation-DTLS", 
              isClient == 0 ? DTLS_server_method() : DTLS_client_method(), 
              turn_params.federation_cert_file, 
              turn_params.federation_pkey_file, 
-             turn_params.federation_pkey_pwd);
+             turn_params.federation_pkey_pwd,
+             federation_ca_file());
   SSL_CTX_set_min_proto_version(ssl_ctx, DTLS1_2_VERSION);
 #endif 
 
   SSL_CTX_set_cipher_list(ssl_ctx, cipherlist);
   
-  if(turn_params.ca_cert_file[0]) {
+  if(federation_ca_file()[0]) {
     // Note:  this call is overriding what was set in set_ctx (mainrelay.c)
     // Note2: Instead of providing a callback to SSL_CTX_set_verify, we instead call SSL_CTX_set_cert_verify_callback.
     //        Why you ask?  Well..  If the peer provided multiple certs then the callback set via 
@@ -465,8 +472,8 @@ void federation_load_certificates(void) {
     SSL_CTX* old_client_ctx = turn_params.federation_dtls_client_ctx;
     SSL_CTX* old_server_ctx = turn_params.federation_dtls_server_ctx;
 
-    if(turn_params.ca_cert_file[0]) {
-      print_abs_file_name("", "Federation CA", turn_params.ca_cert_file);
+    if(federation_ca_file()[0]) {
+      print_abs_file_name("", "Federation CA", federation_ca_file());
     } else {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "No CA cert file, certificate validation is disabled.\n");
     }
