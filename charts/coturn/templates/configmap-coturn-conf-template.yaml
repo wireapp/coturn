@@ -20,18 +20,8 @@ data:
     no-tls
     {{- end }}
 
-    # Certificate authority validation
-    {{- if .Values.ca.enabled }}
-    {{- if or .Values.ca.secretRef .Values.ca.cert }}
-    # Custom CA bundle from Kubernetes Secret
-    CA-file=/secrets-ca/{{ .Values.ca.secretKey | default "ca-certificates.crt" }}
-    {{- else }}
-    # CA validation explicitly disabled
-    {{- end }}
-    {{- else }}
-    # Default system CA bundle
-    CA-file=/etc/ssl/certs/ca-certificates.crt
-    {{- end }}
+    # No CA-file: it would make the TLS listener require client certificates,
+    # which TURN clients don't have. Federation has its own federation-CA-file.
 
     ## don't turn on coturn's cli.
     no-cli
@@ -115,6 +105,18 @@ data:
     {{- if .Values.federate.dtls.enabled }}
     federation-cert=/coturn-dtls-certificate/tls.crt
     federation-pkey=/coturn-dtls-certificate/tls.key
+    # Certificate authority validation of the federation peers (DTLS mutual authentication)
+    {{- if .Values.ca.enabled }}
+    {{- if or .Values.ca.secretRef .Values.ca.cert }}
+    # Custom CA bundle from Kubernetes Secret
+    federation-CA-file=/secrets-ca/{{ .Values.ca.secretKey | default "ca-certificates.crt" }}
+    {{- else }}
+    # CA validation explicitly disabled
+    {{- end }}
+    {{- else }}
+    # Default system CA bundle
+    federation-CA-file=/etc/ssl/certs/ca-certificates.crt
+    {{- end }}
     {{ if hasKey .Values.federate.dtls.tls "privateKeyPassword" }}
     federation-pkey-pwd={{ .Values.federate.dtls.tls.privateKeyPassword }}
     {{ end }}

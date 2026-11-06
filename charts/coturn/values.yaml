@@ -158,7 +158,8 @@ tls:
     tag: 72c3c8434660bd157d42012b0bcd67f338fc5c7a
 
 # CA certificate bundle configuration
-# Controls certificate authority validation for coturn
+# Controls certificate authority validation of the federation peers (federate.dtls),
+# rendered as federation-CA-file. It does not make coturn ask TURN clients for certificates.
 ca:
   # When disabled: Uses system CA bundle at /etc/ssl/certs/ca-certificates.crt (default behavior)
   # When enabled with secretRef OR cert: Uses custom CA bundle
