@@ -1,10 +1,4 @@
-providesApis:
-  - api: coturn/turn
-    versions: ["1.0.0"]
-    reason: Media relay for clients and, with multiSFT, for SFT servers.
-  - api: coturn/federation
-    versions: ["0.1.0"]
-    reason: Relay between the TURN servers of two backends for federated calls.
+providesApis: []
 
 consumesApis: []
 
