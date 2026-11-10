@@ -214,6 +214,17 @@ Flags:
 			The actual value of the secret is defined either by option static-auth-secret,
 			or can be found in the turn_secret table in the database.
 
+--zrest			Use the zrest authentication scheme. It works like the TURN REST API
+			(--use-auth-secret), with the same secrets from static-auth-secret or the
+			turn_secret table, but uses a different username format and password
+			derivation:
+			turn user -> "[sft-]d=<deadline>.v=1.k=<keyindex>.t=s.r=<random>",
+			turn password -> base64(hmac-sha512(input_buffer = turn user, key = shared-secret)).
+			<deadline> is a UNIX timestamp after which the credentials are rejected.
+			The deadline is not enforced for usernames starting with "sft-", which are
+			long-lived SFT credentials (see federation-listening-ip).
+			If --use-auth-secret is also set, zrest takes precedence.
+
 --oauth			Support oAuth authentication, as in the third-party STUN/TURN RFC 7635.
 
 --dh566			Use 566 bits predefined DH TLS key. Default size of the key is 2066.
@@ -455,6 +466,50 @@ Options with values:
 			correctly, if the addresses are mapped properly, even when the TURN server itself
 			is behind A NAT.
 			By default, this value is empty, and no address mapping is used.
+
+--federation-listening-ip	IP address to bind to for federated UDP or DTLS traffic.
+			Federation lets clients of different coturn instances exchange data over a
+			single federated link between two coturn instances. The link uses either
+			DTLS with mutual authentication (default) or plain UDP.
+			A client opts in by allocating with a username that starts with "sft-".
+			Such an allocation gets no relay socket. Instead, the allocate response
+			carries the federation listening address in XOR-RELAYED-ADDRESS and a
+			federation channel number (cid) in a CHANNEL-NUMBER attribute. A client of
+			the other coturn instance, also holding an "sft-" allocation, sends a Send
+			indication to that address with that channel number, and the data is
+			delivered to the first client as a Data indication. Federation allocations
+			need no permissions; CreatePermission and ChannelBind are rejected on them.
+			To enable federation set both federation-listening-ip and
+			federation-listening-port. Federation does not depend on --dtls.
+
+--federation-listening-port	UDP port to bind to for federated traffic.
+
+--federation-no-dtls	Use plain, unencrypted UDP on the federated link. By default DTLS is used,
+			and federation-cert and federation-pkey must be set.
+
+--federation-cert	Federation certificate file, PEM format. Use an absolute path or a path
+			relative to the configuration file. Not needed with federation-no-dtls.
+			Reloaded together with the TLS certificates on SIGUSR2.
+
+--federation-pkey	Federation private key file, PEM format. Use an absolute path or a path
+			relative to the configuration file. Not needed with federation-no-dtls.
+
+--federation-pkey-pwd	Federation private key file password, if the key is encrypted.
+
+--federation-CA-file	CA file in OpenSSL format, used to verify the certificates of the federation
+			peers (DTLS mutual authentication). Unlike CA-file, it does not make the TURN
+			server ask TURN clients for certificates on its TLS/DTLS listeners.
+			If not set, CA-file is used for federation.
+
+--federation-remote-whitelist	Accepted federation peer, in the format <hostname>[,<issuer>].
+			Can be repeated. A peer certificate that passes CA verification is accepted
+			if one of its DNS Subject Alternative Names (or, when it has none, its Common
+			Name) matches a configured hostname. Wildcards are honoured in the
+			certificate name (*.example.com matches a configured foo.example.com) but not
+			in the configured hostname. If an issuer is given, the Common Name of the
+			issuer of some certificate in the peer's chain must also equal it.
+			If no whitelist is configured, any peer certificate that passes CA
+			verification is accepted.
 
 -m, --relay-threads	Number of the relay threads to handle the established connections
 			(in addition to authentication thread and the listener thread).
@@ -735,6 +790,11 @@ Options with values:
 			reflection/amplification abuse where attackers spoof a victim's source address to
 			bounce 401 challenges off the server. Off by default; opt in explicitly.
 --unauthorized-ratelimit-rps=<count>		Maximum number of 401 Unauthorized responses to send per source IP per second. Default 10.
+--unauthorized-ratelimit-allowlist=<file>	File of source IP addresses exempt from --unauthorized-ratelimit, one literal
+			IPv4 or IPv6 address per line (no hostnames, ports or CIDR ranges). Blank lines and lines
+			starting with '#' are ignored, malformed lines are logged and skipped. An IPv4-mapped IPv6
+			source matches its IPv4 entry. The file is re-read on SIGRTMIN+3 where the platform has it;
+			if it cannot be opened, the current list is kept. Has no effect without --unauthorized-ratelimit.
 
 ==================================
 

@@ -163,10 +163,20 @@ sequentially consistent, so callers never reason about per-platform ordering.
 |---|---|---|
 | `--unauthorized-ratelimit` | off | Enable per-source 401 rate-limiting on UDP. |
 | `--unauthorized-ratelimit-rps=<count>` | `10` | Max 401 responses per source IP per second. |
+| `--unauthorized-ratelimit-allowlist=<file>` | none | Source IPs that are never rate-limited. |
 
 A non-positive value for the threshold is rejected with a warning and falls
 back to the default. The default (10 per second) is well above any legitimate
 client's challenge/retry rate, so normal traffic is never affected.
+
+The allowlist file holds one literal IPv4 or IPv6 address per line (no
+hostnames, ports or CIDR ranges); blank lines and `#` lines are ignored. It is
+checked before any bucket is touched, so allowlisted sources neither spend nor
+share a budget, on the TURN listener and the DTLS listener paths alike. An
+IPv4-mapped IPv6 source matches its IPv4 entry. The file is re-read on
+`SIGRTMIN+3` where the platform has it (not macOS); the new set is swapped in
+only after it has been read completely, and the current set is kept if the
+file cannot be opened.
 
 Example:
 

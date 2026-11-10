@@ -114,6 +114,8 @@ lazily when Prometheus scrapes `/metrics`, so they add no cost to the hot path:
 | `turn_ratelimit_hash_collisions` | counter | Requests whose source hashed to a bucket already owned by a different live address (distinct sources sharing a budget — the mitigation's false-positive surface). |
 | `turn_ratelimit_occupied_buckets` | gauge | Buckets currently holding a live (non-expired) window. |
 | `turn_ratelimit_total_buckets` | gauge | Table capacity in buckets. |
+| `turn_ratelimit_allowlist_bypasses` | counter | Rate-limit checks skipped because the source is on `unauthorized-ratelimit-allowlist`. |
+| `turn_ratelimit_allowlist_entries` | gauge | Addresses currently loaded from `unauthorized-ratelimit-allowlist`. |
 
 `turn_ratelimit_occupied_buckets / turn_ratelimit_total_buckets` is the table
 load factor; a sustained high ratio or a climbing `turn_ratelimit_hash_collisions`
