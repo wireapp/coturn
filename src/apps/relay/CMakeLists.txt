@@ -50,6 +50,7 @@ set(HEADER_FILES
     dtls_listener.h
     federation.h
     hostcheck.h
+    zrest.h
     libtelnet.h
     ns_ioalib_impl.h
     ns_sm.h
@@ -70,6 +71,7 @@ set(SOURCE_FILES
     dtls_listener.c
     federation.c
     hostcheck.c
+    zrest.c
     ns_ioalib_engine_impl.c
     mp_peer_table.c
     turn_ports.c

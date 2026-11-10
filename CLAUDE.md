@@ -122,6 +122,9 @@ cd examples
                                 # Needs python3 for the reflection case.
 ./run_tests_stateless_binding.sh  # listener-answered Binding requests stay
                                 # wire-identical. Needs python3.
+./run_tests_zrest.sh            # --zrest auth: valid/expired/sft tokens,
+                                # wrong secret, multiple static secrets.
+                                # Needs python3; FAILs without it.
 ./run_tests_prom.sh             # only when Prometheus support is built.
                                 # Needs wget; FAILs without it.
 cd ..

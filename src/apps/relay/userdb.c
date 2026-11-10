@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -33,6 +34,7 @@
  */
 
 #include <getopt.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <locale.h>
 #include <stdio.h>
@@ -62,6 +64,7 @@
 #include "ns_turn_server.h"
 
 #include "apputils.h"
+#include "zrest.h"
 
 //////////// REALM //////////////
 
@@ -535,6 +538,63 @@ int get_user_key(int in_oauth, int *out_oauth, int *max_session_time, uint8_t *u
     return ret;
   }
 
+  if (turn_params.use_zrest_auth_secret) {
+    turn_zrest_username zu = {0};
+    if (!turn_zrest_parse_username((const char *)usname, &zu)) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Username does not match zrest token format: %s\n", (char *)usname);
+      return ret;
+    }
+
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "zrest authentication version 1 (keyindex=%" PRIu32 ")\n", zu.keyindex);
+
+    /* SFT credentials are long-lived; only client tokens carry an enforced deadline. */
+    if (!zu.sft && !turn_time_before((turn_time_t)time(NULL), (turn_time_t)zu.deadline)) {
+      *key_lookup = TURN_KEY_LOOKUP_EXPIRED;
+      return ret;
+    }
+
+    secrets_list_t sl;
+    init_secrets_list(&sl);
+
+    if (get_auth_secrets(&sl, realm) < 0) {
+      clean_secrets_list(&sl);
+      return ret;
+    }
+
+    for (size_t sll = 0; ret < 0 && sll < get_secrets_list_size(&sl); ++sll) {
+      const char *secret = get_secrets_list_elem(&sl, sll);
+      uint8_t hmac[MAXSHASIZE] = {0};
+      unsigned int hmac_len = 0;
+
+      /* The zrest password is base64(HMAC-SHA512(secret, username)). */
+      if (!secret || !stun_calculate_hmac(usname, strlen((char *)usname), (const uint8_t *)secret, strlen(secret), hmac,
+                                          &hmac_len, SHATYPE_SHA512)) {
+        continue;
+      }
+
+      size_t pwd_length = 0;
+      char *pwd = base64_encode(hmac, hmac_len, &pwd_length);
+      if (pwd && pwd_length > 0 &&
+          stun_produce_integrity_key_str((uint8_t *)usname, realm, (uint8_t *)pwd, key, SHATYPE_DEFAULT)) {
+        password_t pwdtmp;
+        if (stun_check_message_integrity_by_key_str(TURN_CREDENTIALS_LONG_TERM, ioa_network_buffer_data(nbh),
+                                                    ioa_network_buffer_get_size(nbh), key, pwdtmp,
+                                                    SHATYPE_DEFAULT) > 0) {
+          ret = 0;
+        }
+      }
+      free(pwd);
+    }
+
+    if (ret < 0) {
+      *key_lookup = TURN_KEY_LOOKUP_INTEGRITY_MISMATCH;
+    }
+
+    clean_secrets_list(&sl);
+
+    return ret;
+  }
+
   if (turn_params.use_auth_secret_with_timestamp) {
 
     const turn_time_t ctime = (turn_time_t)time(NULL);
@@ -747,7 +807,7 @@ void release_allocation_quota(uint8_t *user, int oauth, uint8_t *realm) {
 
 int add_static_user_account(char *user) {
   /* Realm is either default or empty for users taken from file or command-line */
-  if (!user || turn_params.use_auth_secret_with_timestamp) {
+  if (!user || turn_params.use_auth_secret_with_timestamp || turn_params.use_zrest_auth_secret) {
     return -1;
   }
 

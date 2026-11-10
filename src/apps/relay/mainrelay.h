@@ -322,6 +322,7 @@ typedef struct _turn_params_ {
   bool mobility;
   turn_credential_type ct;
   bool use_auth_secret_with_timestamp;
+  bool use_zrest_auth_secret;
   turn_atomic_u32 max_bps;
   turn_atomic_u32 bps_capacity;
   turn_atomic_u32 bps_capacity_allocated;
