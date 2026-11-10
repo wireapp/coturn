@@ -268,15 +268,18 @@ federate:
     remoteWhitelist: []
 
 ratelimit:
-  override: false
-  # # Set the maximum number of 401 Unauthorized responses allowed per rate-limiting window. Defaults is 1000.
-  # requestLimit: 1000
-  # # Set the time window duration in seconds for rate limiting 401 Unauthorized responses. Defaults is 120.
-  # window: 120
-  # # Define the IPs allowed to bypass the 401 rate-limiting
+  # Limit 401 Unauthorized responses per source address (unauthorized-ratelimit)
+  # to stop UDP reflection. TCP/TLS sources are never limited.
+  enabled: true
+  # Sustained 401 responses per second allowed per source address, with no burst
+  # allowance. Sources are hashed into buckets, so colliding addresses share one
+  # budget.
+  rps: 10
+  # Literal IPv4/IPv6 addresses (no CIDR ranges, no hostnames, no ports) that
+  # bypass the limit. Changes roll the pods, there is no live reload.
   # allowlist:
   #   - "192.168.1.1"
-  #   - "192.168.1.2"
+  #   - "2001:db8::1"
 
 metrics:
   serviceMonitor:

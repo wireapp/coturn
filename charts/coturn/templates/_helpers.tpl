@@ -106,3 +106,16 @@ external-ip embeds it (including the PUBLIC/PRIVATE form). Returns "true" or "".
 {{- end -}}
 {{- if $found -}}true{{- end -}}
 {{- end -}}
+
+{{/*
+Reject the pre-1.0 ratelimit keys. coturn 4.18 dropped the 401-req-limit /
+401-window options they rendered, and silently ignoring them would hide that
+the limit semantics changed.
+*/}}
+{{- define "coturn.validateRatelimit" -}}
+{{- range $key := list "override" "requestLimit" "window" -}}
+{{- if hasKey $.Values.ratelimit $key -}}
+{{- fail (printf "ratelimit.%s is no longer supported: coturn now limits 401 responses per source address, configure ratelimit.enabled and ratelimit.rps instead (see the chart README)" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

@@ -21,3 +21,24 @@ Wire's documentation for Restund, another TURN implementation, on
 coturn can optionally be configured to expose a TLS control port. The TLS
 private key and certificates should be provided in a `Secret` whose name is
 given in `tls.secretRef`.
+
+## Upgrading to 1.0.0
+
+Chart 1.0.0 deploys coturn 4.18. Review these changes before upgrading:
+
+- The 401 rate limit now uses coturn's per-source limiter
+  (`unauthorized-ratelimit`). It is on by default (`ratelimit.enabled: true`)
+  and allows `ratelimit.rps` (default 10) 401 responses per second per source
+  address with no burst, instead of the previous 1000 per 120 s window.
+  Sources are hashed into buckets, so colliding addresses share one budget.
+  Only UDP is limited.
+- `ratelimit.override`, `ratelimit.requestLimit` and `ratelimit.window` are
+  removed. Rendering fails if any of them is set; delete them from your values.
+- `ratelimit.allowlist` is kept and now also exempts sources on the DTLS
+  listener paths. Changing it rolls the pods.
+- The metrics endpoint is enabled with `prometheus` and
+  `prometheus-address` (coturn 4.18 dropped `prometheus-ip`).
+  `coturnPrometheusIP` still sets the address.
+- `no-dtls`, `no-cli`, `no-rfc5780`, `no-software-attribute` and
+  `no-stun-backward-compatibility` are no longer rendered. coturn 4.18 rejects
+  or deprecates them, and their behavior is now the default.
