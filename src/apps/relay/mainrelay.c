@@ -277,6 +277,7 @@ turn_params_t turn_params = {
     "",    /* federation_cert_file */
     "",    /* federation_pkey_file */
     "",    /* federation_pkey_pwd */
+    "",    /* federation_ca_cert_file */
     NULL,  /* federation_dtls_client_ctx */
     NULL   /* federation_dtls_server_ctx */
 };
@@ -1066,6 +1067,11 @@ static char Usage[] =
     "						applied as for the configuration file.\n"
     "						If federation-no-dtls is true then this parameter is not needed.\n"
     " --federation-pkey-pwd		<password>	Password for an encrypted federation private key file.\n"
+    " --federation-CA-file		<filename>	CA file in OpenSSL format to verify the federation peers' "
+    "certificates.\n"
+    "						Unlike CA-file it does not make the TURN server verify client "
+    "certificates.\n"
+    "						If not set, CA-file is used for federation.\n"
     " --federation-remote-whitelist	<hostname>[,<issuer>]	Accepted peer certificate hostname, and\n"
     "						optionally its issuer, for federation DTLS mutual authentication.\n"
     "						Can be used several times.\n"
@@ -1706,6 +1712,7 @@ enum EXTRA_OPTS {
   FEDERATION_CERT_OPT,
   FEDERATION_PKEY_OPT,
   FEDERATION_PKEY_PWD_OPT,
+  FEDERATION_CA_FILE_OPT,
   FEDERATION_REMOTE_WHITELIST_OPT,
   OPT_MULTIPLEX_PEER = 800,
   OPT_MULTIPLEX_PEER_PORT = 801,
@@ -1744,6 +1751,7 @@ static const struct myoption long_options[] = {
     {"federation-cert", required_argument, NULL, FEDERATION_CERT_OPT},
     {"federation-pkey", required_argument, NULL, FEDERATION_PKEY_OPT},
     {"federation-pkey-pwd", required_argument, NULL, FEDERATION_PKEY_PWD_OPT},
+    {"federation-CA-file", required_argument, NULL, FEDERATION_CA_FILE_OPT},
     {"federation-remote-whitelist", required_argument, NULL, FEDERATION_REMOTE_WHITELIST_OPT},
     {"relay-threads", required_argument, NULL, 'm'},
     {"min-port", required_argument, NULL, MIN_PORT_OPT},
@@ -2756,6 +2764,9 @@ static void set_option(int c, char *value) {
     break;
   case FEDERATION_PKEY_PWD_OPT:
     STRCPY(turn_params.federation_pkey_pwd, value);
+    break;
+  case FEDERATION_CA_FILE_OPT:
+    STRCPY(turn_params.federation_ca_cert_file, value);
     break;
   case FEDERATION_REMOTE_WHITELIST_OPT:
     if (value) {
@@ -4066,6 +4077,9 @@ static void adjust_key_file_names(void) {
   if (turn_params.ca_cert_file[0]) {
     adjust_key_file_name(turn_params.ca_cert_file, "CA", 1);
   }
+  if (turn_params.federation_ca_cert_file[0]) {
+    adjust_key_file_name(turn_params.federation_ca_cert_file, "federation CA", 1);
+  }
   adjust_key_file_name(turn_params.cert_file, "certificate", 1);
   adjust_key_file_name(turn_params.pkey_file, "private key", 1);
   if (turn_params.dh_file[0]) {
@@ -4265,8 +4279,9 @@ static int ServerALPNCallback(SSL *ssl, const unsigned char **out, unsigned char
   return SSL_TLSEXT_ERR_NOACK; //???
 }
 
+/* ca_file: when set, peers must present a certificate signed by one of its CAs. */
 void turn_set_ssl_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *method, const char *cert_file,
-                      const char *pkey_file, char *pkey_pwd) {
+                      const char *pkey_file, char *pkey_pwd, const char *ca_file) {
   SSL_CTX *ctx = SSL_CTX_new(method);
   int err = 0;
   int rc = 0;
@@ -4302,14 +4317,14 @@ void turn_set_ssl_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *met
     err = 1;
   }
 
-  if (turn_params.ca_cert_file[0]) {
+  if (ca_file && ca_file[0]) {
 
-    if (!SSL_CTX_load_verify_locations(ctx, turn_params.ca_cert_file, NULL)) {
-      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot load CA from file: %s\n", turn_params.ca_cert_file);
+    if (!SSL_CTX_load_verify_locations(ctx, ca_file, NULL)) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot load CA from file: %s\n", ca_file);
       err = 1;
     }
 
-    SSL_CTX_set_client_CA_list(ctx, SSL_load_client_CA_file(turn_params.ca_cert_file));
+    SSL_CTX_set_client_CA_list(ctx, SSL_load_client_CA_file(ca_file));
 
     /* Set to require peer (client) certificate verification */
     SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE, NULL);
@@ -4525,7 +4540,7 @@ static void openssl_load_certificates(void) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "ERROR: TLS is not supported.\n");
 #else
     turn_set_ssl_ctx(&turn_params.tls_ctx, "TLS", TLS_server_method(), turn_params.cert_file, turn_params.pkey_file,
-                     turn_params.tls_password);
+                     turn_params.tls_password, turn_params.ca_cert_file);
     if (turn_params.enable_tlsv1) {
       SSL_CTX_set_min_proto_version(turn_params.tls_ctx, TLS1_VERSION);
     }
@@ -4544,7 +4559,7 @@ static void openssl_load_certificates(void) {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "ERROR: DTLS is not supported.\n");
 #else
     turn_set_ssl_ctx(&turn_params.dtls_ctx, "DTLS", DTLS_server_method(), turn_params.cert_file, turn_params.pkey_file,
-                     turn_params.tls_password);
+                     turn_params.tls_password, turn_params.ca_cert_file);
     if (turn_params.no_tlsv1_2) {
       SSL_CTX_set_max_proto_version(turn_params.dtls_ctx, DTLS1_VERSION);
     }

@@ -343,16 +343,22 @@ static const char *cipherlist = "ECDHE-RSA-AES128-GCM-SHA256:"
                                 "DHE-RSA-AES256-SHA256:"
                                 "DHE-RSA-AES256-SHA";
 
+/* federation-CA-file, or CA-file for configurations from before federation-CA-file. */
+static const char *federation_ca_file(void) {
+  return turn_params.federation_ca_cert_file[0] ? turn_params.federation_ca_cert_file : turn_params.ca_cert_file;
+}
+
 static SSL_CTX *federation_setup_dtls_ctx(bool is_client) {
   SSL_CTX *ssl_ctx = NULL;
 
   turn_set_ssl_ctx(&ssl_ctx, "Federation-DTLS", is_client ? DTLS_client_method() : DTLS_server_method(),
-                   turn_params.federation_cert_file, turn_params.federation_pkey_file, turn_params.federation_pkey_pwd);
+                   turn_params.federation_cert_file, turn_params.federation_pkey_file, turn_params.federation_pkey_pwd,
+                   federation_ca_file());
   SSL_CTX_set_min_proto_version(ssl_ctx, DTLS1_2_VERSION);
 
   SSL_CTX_set_cipher_list(ssl_ctx, cipherlist);
 
-  if (turn_params.ca_cert_file[0]) {
+  if (federation_ca_file()[0]) {
     // Overrides the verify mode set by turn_set_ssl_ctx. The cert verify callback runs once per handshake rather
     // than once per chain element, so the hostname and issuer checks see the whole chain in one place.
     SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE, NULL);
@@ -392,8 +398,8 @@ void federation_load_certificates(void) {
     return;
   }
 
-  if (turn_params.ca_cert_file[0]) {
-    print_abs_file_name("", "Federation CA", turn_params.ca_cert_file);
+  if (federation_ca_file()[0]) {
+    print_abs_file_name("", "Federation CA", federation_ca_file());
   } else {
     TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "No CA cert file, federation certificate validation is disabled.\n");
   }
@@ -485,11 +491,13 @@ void federation_init(dtls_listener_relay_server_type *listener) {
 
   if (!turn_params.federation_no_dtls) {
     // The federation thread is not running yet, so install the contexts directly.
-    print_abs_file_name("", "Federation Certificate", turn_params.federation_cert_file);
-    print_abs_file_name("", "Federation Private key", turn_params.federation_pkey_file);
-    if (!turn_params.ca_cert_file[0]) {
+    if (federation_ca_file()[0]) {
+      print_abs_file_name("", "Federation CA", federation_ca_file());
+    } else {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "No CA cert file, federation certificate validation is disabled.\n");
     }
+    print_abs_file_name("", "Federation Certificate", turn_params.federation_cert_file);
+    print_abs_file_name("", "Federation Private key", turn_params.federation_pkey_file);
     turn_params.federation_dtls_client_ctx = federation_setup_dtls_ctx(true);
     turn_params.federation_dtls_server_ctx = federation_setup_dtls_ctx(false);
   }

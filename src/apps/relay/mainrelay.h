@@ -396,6 +396,7 @@ typedef struct _turn_params_ {
   char federation_cert_file[1025];
   char federation_pkey_file[1025];
   char federation_pkey_pwd[513];
+  char federation_ca_cert_file[1025];
   SSL_CTX *federation_dtls_client_ctx;
   SSL_CTX *federation_dtls_server_ctx;
 } turn_params_t;
@@ -441,7 +442,7 @@ int add_relay_addr(const char *addr);
 ////////// SSL CTX ////////////////////
 void set_ssl_ctx(ioa_engine_handle e, turn_params_t *params);
 void turn_set_ssl_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *method, const char *cert_file,
-                      const char *pkey_file, char *pkey_pwd);
+                      const char *pkey_file, char *pkey_pwd, const char *ca_file);
 
 ///////// Auth ////////////////
 

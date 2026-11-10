@@ -744,6 +744,7 @@ static void cli_print_configuration(struct cli_session *cs) {
     }
 
     cli_print_str(cs, turn_params.ca_cert_file, "Certificate Authority file", 0);
+    cli_print_str(cs, turn_params.federation_ca_cert_file, "Federation Certificate Authority file", 0);
     cli_print_str(cs, turn_params.cert_file, "Certificate file", 0);
     cli_print_str(cs, turn_params.pkey_file, "Private Key file", 0);
 
@@ -2177,6 +2178,7 @@ static void write_pc_page(ioa_socket_handle s) {
         }
 
         https_print_str(sb, turn_params.ca_cert_file, "Certificate Authority file", 0);
+        https_print_str(sb, turn_params.federation_ca_cert_file, "Federation Certificate Authority file", 0);
         https_print_str(sb, turn_params.cert_file, "Certificate file", 0);
         https_print_str(sb, turn_params.pkey_file, "Private Key file", 0);
 
