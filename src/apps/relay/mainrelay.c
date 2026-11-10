@@ -40,6 +40,7 @@
 #include "federation.h"
 
 #include "ns_turn_ratelimit.h"
+#include "ns_turn_ratelimit_allowlist.h"
 #include "prom_server.h"
 #include <assert.h>
 #include <limits.h>
@@ -264,6 +265,7 @@ turn_params_t turn_params = {
     ///////// Ratelimit /////////
     false,                                  /* unauthorized-ratelimit */
     RATELIMIT_DEFAULT_MAX_REQUESTS_PER_SEC, /* unauthorized-ratelimit-rps */
+    "",                                     /* unauthorized-ratelimit-allowlist */
 
     ///////// Stateless nonce /////////
     true,  /* stateless-nonce */
@@ -313,6 +315,9 @@ static void reload_ssl_certs(evutil_socket_t sock, short events, void *args);
 
 static void shutdown_handler(evutil_socket_t sock, short events, void *args);
 static void drain_handler(evutil_socket_t sock, short events, void *args);
+#if !defined(WINDOWS) && defined(SIGRTMIN)
+static void reload_ratelimit_allowlist(evutil_socket_t sock, short events, void *args);
+#endif
 
 //////////////////////////////////////////////////
 
@@ -1512,6 +1517,10 @@ static char Usage[] =
     "                                                 challenges off the server. Off by default.\n"
     " --unauthorized-ratelimit-rps=<count>           Max 401 Unauthorized responses to send per\n"
     "                                                 source IP per second (default 10).\n"
+    " --unauthorized-ratelimit-allowlist=<file>      File with one IP address per line that is exempt\n"
+    "                                                 from --unauthorized-ratelimit. Blank lines and\n"
+    "                                                 lines starting with '#' are ignored. Reloaded on\n"
+    "                                                 SIGRTMIN+3 where the platform has it.\n"
     " --stateless-nonce                              Issue 401/438 challenge nonces as authenticated\n"
     "                                                 timestamp cookies (issue time + HMAC over the\n"
     "                                                 client address, keyed by a per-process secret)\n"
@@ -1705,6 +1714,7 @@ enum EXTRA_OPTS {
   DRAIN_MIN_ALLOCATIONS_OPT,
   RATELIMIT_OPT,
   RATELIMIT_RPS_OPT,
+  RATELIMIT_ALLOWLIST_OPT,
   STATELESS_NONCE_OPT,
   STATELESS_NONCE_SECRET_OPT,
   CPUS_OPT,
@@ -1899,6 +1909,7 @@ static const struct myoption long_options[] = {
     {"cpus", required_argument, NULL, CPUS_OPT},
     {"unauthorized-ratelimit", optional_argument, NULL, RATELIMIT_OPT},
     {"unauthorized-ratelimit-rps", optional_argument, NULL, RATELIMIT_RPS_OPT},
+    {"unauthorized-ratelimit-allowlist", required_argument, NULL, RATELIMIT_ALLOWLIST_OPT},
     {"stateless-nonce", optional_argument, NULL, STATELESS_NONCE_OPT},
     {"stateless-nonce-secret", required_argument, NULL, STATELESS_NONCE_SECRET_OPT},
     {NULL, no_argument, NULL, 0}};
@@ -2863,6 +2874,9 @@ static void set_option(int c, char *value) {
     turn_params.ratelimit_unauthorized_requests_per_sec = v;
     TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Unauthorized rate-limit threshold: %d responses per second\n", v);
   } break;
+  case RATELIMIT_ALLOWLIST_OPT:
+    STRCPY(turn_params.ratelimit_unauthorized_allowlist, value);
+    break;
   case STATELESS_NONCE_OPT:
     turn_params.stateless_nonce = get_bool_value(value);
     TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Stateless nonce mode is %s\n",
@@ -3999,6 +4013,13 @@ int main(int argc, char **argv) {
   if (turn_params.ratelimit_unauthorized_requests) {
     ratelimit_init();
   }
+  if (turn_params.ratelimit_unauthorized_allowlist[0]) {
+    if (!turn_params.ratelimit_unauthorized_requests) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING,
+                    "--unauthorized-ratelimit-allowlist has no effect without --unauthorized-ratelimit\n");
+    }
+    turn_ratelimit_allowlist_load(turn_params.ratelimit_unauthorized_allowlist);
+  }
 
   if (turn_params.stateless_nonce && !turn_params.stateless_nonce_key_set) {
     /* Process-wide ephemeral key for challenge nonces (no
@@ -4025,6 +4046,12 @@ int main(int argc, char **argv) {
   event_add(ev, NULL);
   ev = evsignal_new(turn_params.listener.event_base, SIGUSR1, drain_handler, NULL);
   event_add(ev, NULL);
+#if defined(SIGRTMIN)
+  if (turn_params.ratelimit_unauthorized_allowlist[0]) {
+    ev = evsignal_new(turn_params.listener.event_base, SIGRTMIN + 3, reload_ratelimit_allowlist, NULL);
+    event_add(ev, NULL);
+  }
+#endif
 #endif
 
   drop_privileges();
@@ -4621,6 +4648,16 @@ static void drain_handler(evutil_socket_t sock, short events, void *args) {
   UNUSED_ARG(events);
   UNUSED_ARG(args);
 }
+
+#if !defined(WINDOWS) && defined(SIGRTMIN)
+static void reload_ratelimit_allowlist(evutil_socket_t sock, short events, void *args) {
+  TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Reloading rate-limit allowlist on signal %d\n", sock);
+  turn_ratelimit_allowlist_load(turn_params.ratelimit_unauthorized_allowlist);
+
+  UNUSED_ARG(events);
+  UNUSED_ARG(args);
+}
+#endif
 
 void increment_global_allocation_count(void) {
 #ifdef _MSC_VER

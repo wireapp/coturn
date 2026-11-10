@@ -26,8 +26,10 @@ coturn_add_test(test_acme ../src/apps/relay/acme.c)
 coturn_add_test(test_redis_conninfo ../src/apps/relay/dbdrivers/dbd_redis_conninfo.c)
 coturn_add_test(test_log_min_level)
 coturn_add_test(test_zrest ../src/apps/relay/zrest.c)
-coturn_add_test(test_ratelimit ../src/server/ns_turn_ratelimit.c)
+coturn_add_test(test_ratelimit ../src/server/ns_turn_ratelimit.c ../src/server/ns_turn_ratelimit_allowlist.c)
 target_include_directories(test_ratelimit PRIVATE ../src/server ../src)
+coturn_add_test(test_ratelimit_allowlist ../src/server/ns_turn_ratelimit.c ../src/server/ns_turn_ratelimit_allowlist.c)
+target_include_directories(test_ratelimit_allowlist PRIVATE ../src/server ../src)
 
 # Multiplex-peer demux table: per-session registration cap and per-session
 # deregistration. The module is self-contained, so it is compiled together
@@ -70,7 +72,8 @@ coturn_add_test(test_turn_server_send
     ../src/server/ns_turn_allocation.c
     ../src/server/ns_turn_maps.c
     ../src/server/ns_turn_maps_rtcp.c
-    ../src/server/ns_turn_ratelimit.c)
+    ../src/server/ns_turn_ratelimit.c
+    ../src/server/ns_turn_ratelimit_allowlist.c)
 target_include_directories(test_turn_server_send PRIVATE
     ../src/server
     ../src/apps/common

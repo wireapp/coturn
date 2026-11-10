@@ -377,6 +377,7 @@ typedef struct _turn_params_ {
 
   bool ratelimit_unauthorized_requests;
   vint ratelimit_unauthorized_requests_per_sec;
+  char ratelimit_unauthorized_allowlist[1025]; /* --unauthorized-ratelimit-allowlist */
 
   /* --stateless-nonce (issue #1999): derive challenge nonces from a
    * process-wide secret key so unauthenticated UDP requests can be answered

@@ -36,6 +36,7 @@
 #include "mainrelay.h"
 #include "ns_turn_atomic.h" // for TURN_THREAD_LOCAL (portable thread-local on MSVC)
 #include "ns_turn_ratelimit.h"
+#include "ns_turn_ratelimit_allowlist.h"
 #include "ns_turn_utils.h"
 #include <stdio.h>
 #if !defined(WINDOWS)
@@ -62,6 +63,8 @@ prom_counter_t *turn_auth_credential_failures;
 prom_counter_t *turn_ratelimit_hash_collisions;
 prom_gauge_t *turn_ratelimit_occupied_buckets;
 prom_gauge_t *turn_ratelimit_total_buckets;
+prom_counter_t *turn_ratelimit_allowlist_bypasses;
+prom_gauge_t *turn_ratelimit_allowlist_entries;
 
 prom_counter_t *turn_traffic_rcvp;
 prom_counter_t *turn_traffic_rcvb;
@@ -111,6 +114,14 @@ static void prom_refresh_ratelimit_stats(void) {
     last_collisions = cur;
   }
   prom_gauge_set(turn_ratelimit_occupied_buckets, (double)ratelimit_count_occupied(), NULL);
+
+  static uint32_t last_bypasses = 0;
+  uint32_t bypasses = turn_ratelimit_allowlist_get_bypasses();
+  if (bypasses != last_bypasses) {
+    prom_counter_add(turn_ratelimit_allowlist_bypasses, (double)(uint32_t)(bypasses - last_bypasses), NULL);
+    last_bypasses = bypasses;
+  }
+  prom_gauge_set(turn_ratelimit_allowlist_entries, (double)turn_ratelimit_allowlist_size(), NULL);
 }
 
 static MHD_RESULT promhttp_handler(void *cls, struct MHD_Connection *connection, const char *url, const char *method,
@@ -235,6 +246,10 @@ void start_prometheus_server(void) {
   // Capacity is a compile-time constant; publish it once so occupancy can be
   // read as a utilization ratio in PromQL.
   prom_gauge_set(turn_ratelimit_total_buckets, (double)ratelimit_get_capacity(), NULL);
+  turn_ratelimit_allowlist_bypasses = prom_collector_registry_must_register_metric(prom_counter_new(
+      "turn_ratelimit_allowlist_bypasses", "401 rate-limit checks skipped because the source is allowlisted", 0, NULL));
+  turn_ratelimit_allowlist_entries = prom_collector_registry_must_register_metric(prom_gauge_new(
+      "turn_ratelimit_allowlist_entries", "Addresses loaded from --unauthorized-ratelimit-allowlist", 0, NULL));
 
   // Create TURN traffic counter metrics
   turn_traffic_rcvp = prom_collector_registry_must_register_metric(

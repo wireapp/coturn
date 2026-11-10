@@ -38,8 +38,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "ns_turn_atomic.h" // for turn_atomic_* portable atomics
-#include "ns_turn_defs.h"   // for turn_time_t / turn_time()
+#include "ns_turn_atomic.h"              // for turn_atomic_* portable atomics
+#include "ns_turn_defs.h"                // for turn_time_t / turn_time()
+#include "ns_turn_ratelimit_allowlist.h" // for turn_ratelimit_allowlist_contains
 
 /* Power-of-two bucket count. 4096 buckets * 20 B/bucket = ~80 KiB resident.
  * Increasing this lowers hash-collision probability for legit traffic. Live
@@ -107,6 +108,10 @@ bool ratelimit_consume_address(const ioa_addr *address, uint32_t max_requests_pe
     *first_collision = false;
   }
   if (!address || max_requests_per_sec == 0) {
+    return false;
+  }
+  /* Allowlisted sources are exempt and never touch a bucket. */
+  if (turn_ratelimit_allowlist_contains(address)) {
     return false;
   }
 

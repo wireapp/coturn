@@ -17,6 +17,10 @@
 #             client traffic produces nowhere near 100000 401s/sec, so the
 #             "exceeded" log line must NOT appear.
 #
+#   allowlist: --unauthorized-ratelimit-rps=1 again, but the client's source
+#             is listed in --unauthorized-ratelimit-allowlist, so it must
+#             never be limited; a SIGRTMIN+3 reload must take effect live.
+#
 # Split out of run_tests.sh so the rate-limit configuration is fully
 # isolated from the protocol-test server fixture in that script — a
 # regression in either suite must not be masked by the other's flags.
@@ -24,6 +28,7 @@
 # Per-run log path; $$ keeps two concurrent invocations from clobbering
 # each other.
 RATELIMIT_LOG="/tmp/run_tests_ratelimit_401.$$.log"
+ALLOWLIST="/tmp/run_tests_ratelimit_401.$$.allowlist"
 turnserver_pid=""
 
 cleanup() {
@@ -31,7 +36,7 @@ cleanup() {
         kill "$turnserver_pid" 2>/dev/null
         wait "$turnserver_pid" 2>/dev/null
     fi
-    rm -f "$RATELIMIT_LOG"
+    rm -f "$RATELIMIT_LOG" "$ALLOWLIST"
 }
 trap cleanup EXIT
 
@@ -128,6 +133,22 @@ else
     echo OK
 fi
 
+echo "Running 401 rate-limit (allowlisted source)"
+printf '# loopback client\n127.0.0.1\n' > "$ALLOWLIST"
+run_ratelimit_server --unauthorized-ratelimit --unauthorized-ratelimit-rps=1 \
+    --unauthorized-ratelimit-allowlist="$ALLOWLIST" || exit 1
+drive_bad_client
+
+if grep -q 'Loaded 1 address(es) into rate-limit allowlist' "$RATELIMIT_LOG" \
+   && ! grep -q '401 rate-limit exceeded from' "$RATELIMIT_LOG"; then
+    echo OK
+else
+    echo "FAIL: allowlisted source was rate-limited (or the allowlist did not load)"
+    echo "--- turnserver log (last 40 lines) ---"
+    tail -40 "$RATELIMIT_LOG"
+    exit 1
+fi
+
 # The stateless-nonce listener answers a forged MESSAGE-INTEGRITY with a 438
 # without building a session. That reply still goes to an unverified source, so
 # it draws on the same per-source budget as the 401.
@@ -161,6 +182,47 @@ if [ "$replied" = "$FLOOD" ] && ! grep -q 'unauthorized-response rate-limit exce
     echo OK
 else
     echo "FAIL: 438s suppressed below threshold (replied=$replied of $FLOOD)"
+    echo "--- turnserver log (last 40 lines) ---"
+    tail -40 "$RATELIMIT_LOG"
+    exit 1
+fi
+
+echo "Running unauthenticated-reply rate-limit (forged MESSAGE-INTEGRITY, allowlisted source)"
+printf '127.0.0.1\n' > "$ALLOWLIST"
+run_ratelimit_server --stateless-nonce-secret=fleet-nonce-secret \
+    --unauthorized-ratelimit --unauthorized-ratelimit-rps=1 \
+    --unauthorized-ratelimit-allowlist="$ALLOWLIST" || exit 1
+replied="$(python3 scripts/stateless_nonce_forged_mi.py 127.0.0.1 3479 user flood "$FLOOD" \
+           | sed -n 's/.*replied=\([0-9]*\).*/\1/p')"
+if [ "$replied" = "$FLOOD" ] && ! grep -q 'unauthorized-response rate-limit exceeded from' "$RATELIMIT_LOG"; then
+    echo OK
+else
+    echo "FAIL: allowlisted source's 438s suppressed (replied=$replied of $FLOOD)"
+    echo "--- turnserver log (last 40 lines) ---"
+    tail -40 "$RATELIMIT_LOG"
+    exit 1
+fi
+
+echo "Running unauthenticated-reply rate-limit (allowlist reload on SIGRTMIN+3)"
+printf '# empty\n' > "$ALLOWLIST"
+run_ratelimit_server --stateless-nonce-secret=fleet-nonce-secret \
+    --unauthorized-ratelimit --unauthorized-ratelimit-rps=1 \
+    --unauthorized-ratelimit-allowlist="$ALLOWLIST" || exit 1
+before="$(python3 scripts/stateless_nonce_forged_mi.py 127.0.0.1 3479 user flood "$FLOOD" \
+          | sed -n 's/.*replied=\([0-9]*\).*/\1/p')"
+printf '127.0.0.1\n' > "$ALLOWLIST"
+kill -s RTMIN+3 "$turnserver_pid"
+for i in $(seq 1 20); do
+    grep -q 'Loaded 1 address(es) into rate-limit allowlist' "$RATELIMIT_LOG" && break
+    sleep 0.25
+done
+sleep 1
+after="$(python3 scripts/stateless_nonce_forged_mi.py 127.0.0.1 3479 user flood "$FLOOD" \
+         | sed -n 's/.*replied=\([0-9]*\).*/\1/p')"
+if [ -n "$before" ] && [ "$before" -lt "$FLOOD" ] && [ "$after" = "$FLOOD" ]; then
+    echo "OK (before reload $before/$FLOOD, after reload $after/$FLOOD)"
+else
+    echo "FAIL: allowlist reload not applied (before=$before after=$after of $FLOOD)"
     echo "--- turnserver log (last 40 lines) ---"
     tail -40 "$RATELIMIT_LOG"
     exit 1

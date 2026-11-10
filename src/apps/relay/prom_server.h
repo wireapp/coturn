@@ -78,6 +78,8 @@ extern prom_counter_t *turn_auth_credential_failures;
 extern prom_counter_t *turn_ratelimit_hash_collisions;
 extern prom_gauge_t *turn_ratelimit_occupied_buckets;
 extern prom_gauge_t *turn_ratelimit_total_buckets;
+extern prom_counter_t *turn_ratelimit_allowlist_bypasses;
+extern prom_gauge_t *turn_ratelimit_allowlist_entries;
 
 extern prom_counter_t *turn_new_allocation;
 extern prom_counter_t *turn_refreshed_allocation;
