@@ -2213,7 +2213,7 @@ static int handle_turn_refresh(turn_turnserver *server, ts_ur_super_session *ss,
     }
   }
 
-  if (!no_response) {
+  if (!(*no_response)) {
     if (!(*resp_constructed)) {
 
       if (!(*err_code)) {
