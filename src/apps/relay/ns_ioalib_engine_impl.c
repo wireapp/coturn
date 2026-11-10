@@ -331,6 +331,11 @@ int set_ioa_socket_buf_size(ioa_socket_handle s, int sz) {
 
 /************** Buffer List ********************/
 
+/* Engine buffer reuse is off: the recycled-buffer list was seen corrupted in production. */
+#ifndef TURN_ENGINE_BUFFER_POOL
+#define TURN_ENGINE_BUFFER_POOL 0
+#endif
+
 static int buffer_list_empty(stun_buffer_list *bufs) {
   if (bufs && bufs->head && bufs->tsz) {
     return 0;
@@ -338,6 +343,7 @@ static int buffer_list_empty(stun_buffer_list *bufs) {
   return 1;
 }
 
+#if TURN_ENGINE_BUFFER_POOL
 static stun_buffer_list_elem *get_elem_from_buffer_list(stun_buffer_list *bufs) {
   stun_buffer_list_elem *ret = NULL;
 
@@ -358,6 +364,7 @@ static stun_buffer_list_elem *get_elem_from_buffer_list(stun_buffer_list *bufs) 
 
   return ret;
 }
+#endif
 
 static void pop_elem_from_buffer_list(stun_buffer_list *bufs) {
   if (bufs && bufs->head && bufs->tsz) {
@@ -373,7 +380,12 @@ static void pop_elem_from_buffer_list(stun_buffer_list *bufs) {
 }
 
 static stun_buffer_list_elem *new_blist_elem(ioa_engine_handle e) {
+#if TURN_ENGINE_BUFFER_POOL
   stun_buffer_list_elem *ret = get_elem_from_buffer_list(&(e->bufs));
+#else
+  UNUSED_ARG(e);
+  stun_buffer_list_elem *ret = NULL;
+#endif
 
   if (!ret) {
     ret = (stun_buffer_list_elem *)turn_malloc(sizeof(stun_buffer_list_elem));
@@ -415,6 +427,7 @@ static void add_buffer_to_buffer_list(stun_buffer_list *bufs, char *buf, size_t 
 }
 
 static void free_blist_elem(ioa_engine_handle e, stun_buffer_list_elem *buf_elem) {
+#if TURN_ENGINE_BUFFER_POOL
   if (buf_elem) {
     if (e && (e->bufs.tsz < MAX_BUFFER_QUEUE_SIZE_PER_ENGINE)) {
       add_elem_to_buffer_list(&(e->bufs), buf_elem);
@@ -422,6 +435,10 @@ static void free_blist_elem(ioa_engine_handle e, stun_buffer_list_elem *buf_elem
       free(buf_elem);
     }
   }
+#else
+  UNUSED_ARG(e);
+  free(buf_elem);
+#endif
 }
 
 #if !defined(_MSC_VER) && defined(CMSG_SPACE)
