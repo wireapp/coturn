@@ -125,6 +125,10 @@ cd examples
 ./run_tests_zrest.sh            # --zrest auth: valid/expired/sft tokens,
                                 # wrong secret, multiple static secrets.
                                 # Needs python3; FAILs without it.
+./run_tests_federation.sh       # two servers on loopback; sft- clients
+                                # relay through the federation link
+                                # (DTLS and plain UDP, 1 and 4 relay
+                                # threads). Needs python3; FAILs without it.
 ./run_tests_prom.sh             # only when Prometheus support is built.
                                 # Needs wget; FAILs without it.
 cd ..
