@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -193,6 +194,12 @@ typedef struct _allocation {
   void *owner;             // ss
   ur_map *tcp_connections; // global (per turn server) reference
   tcp_connection_list tcs; // local reference
+  /* Wire: set for "sft-" users when federation is configured. Such allocations relay through the federation
+   * listener instead of a relay socket, and need no permissions. */
+  bool use_federation;
+  uint16_t federation_cid;
+  turn_time_t federation_expiration_time;
+  ioa_timer_handle federation_lifetime_ev;
 } allocation;
 
 //////////// CHANNELS ////////////////////
@@ -210,6 +217,7 @@ void clear_allocation(allocation *a, SOCKET_TYPE socket_type);
 void turn_permission_clean(turn_permission_info *tinfo);
 
 void set_allocation_lifetime_ev(allocation *a, turn_time_t exp_time, ioa_timer_handle ev, int family);
+void set_federation_allocation_lifetime_ev(allocation *a, turn_time_t exp_time, ioa_timer_handle ev);
 bool is_allocation_valid(const allocation *a);
 void set_allocation_valid(allocation *a, bool value);
 turn_permission_info *allocation_get_permission(allocation *a, const ioa_addr *addr);

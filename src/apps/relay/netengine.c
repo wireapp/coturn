@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -32,6 +33,7 @@
  * SUCH DAMAGE.
  */
 
+#include "federation.h"
 #include "mainrelay.h"
 #include <errno.h>
 
@@ -112,6 +114,10 @@ static int turn_barrier_wait(turn_barrier_t *b) {
 static unsigned int barrier_count = 0;
 static TURN_BARRIER barrier;
 static TURN_BARRIER relay_setup_barrier;
+
+/* The federation listener gets its own thread only when there is more than one relay thread. */
+#define federation_needs_own_thread() (turn_federation_enabled() && turn_params.general_relay_servers_number > 1)
+static pthread_t federation_thr;
 
 ////////////// Auth Server ////////////////
 
@@ -751,10 +757,42 @@ err:
   return ret;
 }
 
+void send_federation_data_message_to_relay(turnsession_id sid, ioa_network_buffer_handle nbh, int ttl, int tos) {
+  struct message_to_relay sm;
+  memset(&sm, 0, sizeof(struct message_to_relay));
+  sm.t = RMT_FEDERATION_SEND;
+
+  const turnserver_id id = (turnserver_id)(sid / TURN_SESSION_ID_FACTOR);
+
+  struct relay_server *rs = get_relay_server(id);
+  if (!rs) {
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: can't find relay for turn_server_id: %d\n", __FUNCTION__, (int)id);
+    ioa_network_buffer_delete(NULL, nbh);
+    return;
+  }
+
+  sm.relay_server = rs;
+  sm.m.fed_send.id = sid;
+  sm.m.fed_send.nbh = nbh;
+  sm.m.fed_send.ttl = ttl;
+  sm.m.fed_send.tos = tos;
+
+  struct evbuffer *output = bufferevent_get_output(rs->out_buf);
+  if (!output || evbuffer_add(output, &sm, sizeof(struct message_to_relay)) < 0) {
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: Empty output buffer\n", __FUNCTION__);
+    ioa_network_buffer_delete(NULL, nbh);
+  }
+}
+
 static int handle_relay_message(relay_server_handle rs, struct message_to_relay *sm) {
   if (rs && sm) {
 
     switch (sm->t) {
+
+    case RMT_FEDERATION_SEND:
+      turn_send_federation_data(&(rs->server), sm->m.fed_send.id, sm->m.fed_send.nbh, sm->m.fed_send.ttl,
+                                sm->m.fed_send.tos);
+      break;
 
     case RMT_CANCEL_SESSION: {
       turn_cancel_session(&(rs->server), sm->m.csm.id);
@@ -1390,6 +1428,12 @@ static void setup_relay_server(struct relay_server *rs, ioa_engine_handle e, int
   set_auth_credential_failure_metric_cb(&(rs->server), prom_inc_auth_credential_failure);
   set_stateless_nonce(&(rs->server), &turn_params.stateless_nonce, turn_params.stateless_nonce_key,
                       sizeof(turn_params.stateless_nonce_key));
+  if (turn_federation_enabled()) {
+    addr_cpy(&rs->server.federation_addr, &turn_params.federation_listening_ip);
+    addr_set_port(&rs->server.federation_addr, turn_params.federation_listening_port);
+    /* The listener is created after the relay servers, so keep a pointer to the pointer. */
+    rs->server.federation_service = (void **)&turn_params.listener.federation_service;
+  }
   if (to_set_rfc5780) {
     set_rfc5780(&(rs->server), get_alt_addr, send_message_from_listener_to_client);
   }
@@ -1551,6 +1595,65 @@ static void *run_admin_server_thread(void *arg) {
   return arg;
 }
 
+static void *run_federation_thread(void *arg) {
+  ioa_engine_handle e = (ioa_engine_handle)arg;
+
+  ignore_sigpipe();
+
+  barrier_wait();
+
+  while (!turn_params.stop_turn_server) {
+    run_events(NULL, e);
+  }
+
+  return arg;
+}
+
+static void setup_federation_server(void) {
+  if (!turn_federation_enabled()) {
+    return;
+  }
+
+  if (federation_needs_own_thread()) {
+    super_memory_t *sm = new_super_memory_region();
+    struct event_base *eb = turn_event_base_new();
+    turn_params.listener.federation_ioa_eng =
+        create_ioa_engine(sm, eb, turn_params.listener.tp, turn_params.relay_ifname, turn_params.relays_number,
+                          turn_params.relay_addrs, turn_params.default_relays, turn_params.verbose
+#if !defined(TURN_NO_HIREDIS)
+                          ,
+                          &turn_params.redis_statsdb
+#endif
+        );
+  } else {
+    /* Share the only relay thread, so sends need no hand-off. */
+    turn_params.listener.federation_ioa_eng = general_relay_servers[0]->ioa_eng;
+  }
+
+  if (!turn_params.listener.federation_ioa_eng) {
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot create federation engine\n");
+    exit(-1);
+  }
+
+  char slistenaddr[MAX_IOA_ADDR_STRING] = {0};
+  addr_to_string_no_port(&turn_params.federation_listening_ip, slistenaddr);
+
+  turn_params.listener.federation_service = create_dtls_federation_listener_server(
+      turn_params.listener_ifname, slistenaddr, turn_params.federation_listening_port, turn_params.sock_buf_size,
+      turn_params.verbose, turn_params.listener.federation_ioa_eng);
+  if (!turn_params.listener.federation_service) {
+    TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot create federation listener\n");
+    exit(-1);
+  }
+
+  if (federation_needs_own_thread()) {
+    if (pthread_create(&federation_thr, NULL, run_federation_thread, turn_params.listener.federation_ioa_eng)) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot create federation thread: %s\n", strerror(errno));
+      exit(-1);
+    }
+  }
+}
+
 static void setup_admin_server(void) {
   memset(&adminserver, 0, sizeof(struct admin_server));
   adminserver.listen_fd = -1;
@@ -1584,6 +1687,9 @@ void setup_server(void) {
   /* plus admin thread */
   /* udp address listener thread(s) will start later */
   barrier_count = turn_params.general_relay_servers_number + authserver_number + 1 + 1;
+  if (federation_needs_own_thread()) {
+    barrier_count++;
+  }
 
 #if defined(__linux__)
   if (turn_params.multiplex_peer) {
@@ -1609,6 +1715,7 @@ void setup_server(void) {
   TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Total relay threads: %d\n", (int)get_real_general_relay_servers_number());
 
   setup_socket_per_thread_udp_listener_servers();
+  setup_federation_server();
   {
     const int tot = get_real_general_relay_servers_number();
     if (tot) {
@@ -1658,6 +1765,9 @@ void shutdown_server(void) {
   if (adminserver.event_base) {
     event_base_loopbreak(adminserver.event_base);
   }
+  if (federation_needs_own_thread() && turn_params.listener.federation_ioa_eng) {
+    event_base_loopbreak(turn_params.listener.federation_ioa_eng->event_base);
+  }
 
   /* Join all worker threads so none of them can be inside an OpenSSL
    * call when main returns and OPENSSL_cleanup runs from atexit
@@ -1675,6 +1785,12 @@ void shutdown_server(void) {
     pthread_join(authserver[sn].thr, NULL);
   }
   pthread_join(adminserver.thr, NULL);
+  if (federation_needs_own_thread()) {
+    pthread_join(federation_thr, NULL);
+  }
+
+  /* Every event loop has stopped, so the federation sockets can be closed from here. */
+  federation_close_connections();
 
   TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "All worker threads joined\n");
 }

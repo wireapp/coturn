@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -42,6 +43,7 @@
 #include <errno.h>
 
 #include "dtls_listener.h"
+#include "federation.h"
 #include "ns_ioalib_impl.h"
 #include "ns_turn_ratelimit.h"
 #include "ns_turn_utils.h"
@@ -110,7 +112,8 @@ typedef enum {
   UDP_PACKET_CLASS_STUN_OR_CHANNEL,
   UDP_PACKET_CLASS_DTLS_HANDSHAKE,
   UDP_PACKET_CLASS_DTLS_OTHER,
-  UDP_PACKET_CLASS_OLD_STUN
+  UDP_PACKET_CLASS_OLD_STUN,
+  UDP_PACKET_CLASS_FEDERATION
 } udp_packet_classification_t;
 
 struct dtls_listener_relay_server_info {
@@ -118,7 +121,9 @@ struct dtls_listener_relay_server_info {
   ioa_addr addr;
   ioa_engine_handle e;
   turn_turnserver *ts;
+  int sock_buf_size;
   int verbose;
+  bool federation_listener;
   struct event *udp_listen_ev;
   ioa_socket_handle udp_listen_s;
   ur_addr_map *children_ss; /* map of socket children on remote addr */
@@ -383,7 +388,7 @@ static ioa_socket_handle dtls_server_input_handler(dtls_listener_relay_server_ty
    * This is what the half-open cap could bound but not prevent:
    * a spoofed-source flood now creates zero state. */
 
-  SSL *ssl = SSL_new(server->e->dtls_ctx);
+  SSL *ssl = SSL_new(server->federation_listener ? turn_params.federation_dtls_server_ctx : server->e->dtls_ctx);
   SSL_set_accept_state(ssl);
   SSL_set_options(ssl, SSL_OP_COOKIE_EXCHANGE
 #if defined(SSL_OP_NO_RENEGOTIATION)
@@ -417,23 +422,33 @@ static ioa_socket_handle dtls_server_input_handler(dtls_listener_relay_server_ty
 
   /* Cookie verified: charge the now-return-routable peer against the half-open
    * cap. A completing or closing handshake releases the slot, so the cap still
-   * guards against a flood of validated peers that stall mid-handshake. */
-  if (!turn_dtls_half_open_try_inc(dtls_half_open_cap())) {
+   * guards against a flood of validated peers that stall mid-handshake.
+   * Federation peers are bounded by the federation handshake timer instead, so
+   * a client flood cannot lock them out. */
+  const bool charge_half_open = !server->federation_listener;
+  if (charge_half_open && !turn_dtls_half_open_try_inc(dtls_half_open_cap())) {
     SSL_free(ssl);
     return NULL;
+  }
+
+  /* Federation peers authenticate with a client certificate chain. */
+  if (server->federation_listener) {
+    SSL_set_max_cert_list(ssl, SSL_MAX_CERT_LIST_DEFAULT);
   }
 
   ioa_socket_handle ioas = create_ioa_socket_from_ssl(server->e, s, ssl, DTLS_SOCKET, CLIENT_SOCKET,
                                                       &(server->sm.m.sm.nd.src_addr), &(server->addr));
   if (!ioas) {
-    turn_dtls_half_open_dec();
+    if (charge_half_open) {
+      turn_dtls_half_open_dec();
+    }
     SSL_free(ssl);
     TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot create ioa_socket from SSL\n");
     return NULL;
   }
 
-  ioas->dtls_half_open = true;
-  set_ioa_socket_buf_size(ioas, server->ts->sock_buf_size);
+  ioas->dtls_half_open = charge_half_open;
+  set_ioa_socket_buf_size(ioas, server->sock_buf_size);
   server->sm.m.sm.nd.recv_ttl = TTL_IGNORE;
   server->sm.m.sm.nd.recv_tos = TOS_IGNORE;
   server->sm.m.sm.s = ioas;
@@ -964,6 +979,73 @@ static bool udp_stateless_fast_path(dtls_listener_relay_server_type *server, ioa
   return true;
 }
 
+/* Called after ssl_read() on an established federation socket. */
+static void federation_after_ssl_read(dtls_listener_relay_server_type *server, ioa_socket_handle s, int init_before,
+                                      int sslret, ioa_network_buffer_handle *nbh) {
+  if (!init_before && SSL_is_init_finished(s->ssl)) {
+    IOA_EVENT_DEL(s->federation_handshake_tmr);
+    s->federation_heartbeat_pings_outstanding = 0;
+    if (SSL_is_server(s->ssl)) {
+      federation_start_server_heartbeat_timer(s);
+    } else {
+      federation_start_client_heartbeat_timer(s);
+    }
+    /* Data queued while the handshake was in progress. */
+    send_ssl_backlog_buffers(s);
+  }
+  if (sslret == 0) {
+    /* No application data: the buffer still holds the raw DTLS record. */
+    ioa_network_buffer_delete(server->e, *nbh);
+    *nbh = NULL;
+  }
+}
+
+/* First packet from an unknown source on the federation listener. */
+static int handle_federation_new_source(dtls_listener_relay_server_type *server, struct message_to_relay *sm,
+                                        ioa_engine_handle ioa_eng, udp_packet_classification_t packet_type) {
+  ioa_socket_handle s = sm->m.sm.s;
+  ioa_socket_handle chs = NULL;
+
+  if (!turn_params.federation_no_dtls) {
+#if DTLS_SUPPORTED
+    if (packet_type == UDP_PACKET_CLASS_DTLS_HANDSHAKE) {
+      chs = dtls_server_input_handler(server, s, sm->m.sm.nd.nbh);
+    }
+#endif
+    /* Without a DTLS session there are no keys for anything else, and plain UDP is not accepted. */
+    ioa_network_buffer_delete(ioa_eng, sm->m.sm.nd.nbh);
+    sm->m.sm.nd.nbh = NULL;
+    if (!chs) {
+      return 0;
+    }
+  } else {
+    chs = create_ioa_socket_from_fd(ioa_eng, s->fd, s, UDP_SOCKET, CLIENT_SOCKET, &(sm->m.sm.nd.src_addr),
+                                    get_local_addr_from_ioa_socket(s));
+    if (!chs) {
+      return -1;
+    }
+  }
+
+  chs->e = ioa_eng;
+  set_ioa_socket_buf_size(chs, server->sock_buf_size);
+  add_socket_to_map(chs, server->children_ss);
+  sm->m.sm.s = chs;
+
+  if (register_callback_on_ioa_socket(ioa_eng, chs, IOA_EV_READ, federation_input_handler, server, 0) < 0) {
+    IOA_CLOSE_SOCKET(chs);
+    sm->m.sm.s = NULL;
+    return -1;
+  }
+
+  if (chs->ssl) {
+    federation_start_handshake_timer(chs);
+  } else if (sm->m.sm.nd.nbh) {
+    federation_input_handler(chs, IOA_EV_READ, &(sm->m.sm.nd), server, 0);
+  }
+
+  return 0;
+}
+
 static int handle_udp_packet(dtls_listener_relay_server_type *server, struct message_to_relay *sm,
                              ioa_engine_handle ioa_eng, turn_turnserver *ts, udp_packet_classification_t packet_type) {
   const int verbose = ioa_eng->verbose;
@@ -985,6 +1067,7 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
     s = chs;
     sm->m.sm.s = s;
     if (s->ssl) {
+      const int init_before = SSL_is_init_finished(s->ssl);
       const int sslret = ssl_read(s->fd, s->ssl, sm->m.sm.nd.nbh, verbose);
       if (sslret < 0) {
         ioa_network_buffer_delete(ioa_eng, sm->m.sm.nd.nbh);
@@ -1007,6 +1090,9 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
       } else {
         ioa_network_buffer_delete(ioa_eng, sm->m.sm.nd.nbh);
         sm->m.sm.nd.nbh = NULL;
+      }
+      if (s && server->federation_listener) {
+        federation_after_ssl_read(server, s, init_before, sslret, &(sm->m.sm.nd.nbh));
       }
     }
 
@@ -1084,6 +1170,10 @@ static int handle_udp_packet(dtls_listener_relay_server_type *server, struct mes
     }
 
     chs = NULL;
+
+    if (server->federation_listener) {
+      return handle_federation_new_source(server, sm, ioa_eng, packet_type);
+    }
 
 #if DTLS_SUPPORTED
     if (turn_params.dtls && (packet_type == UDP_PACKET_CLASS_DTLS_HANDSHAKE)) {
@@ -1206,7 +1296,28 @@ static int process_udp_datagram(dtls_listener_relay_server_type *server, ioa_soc
   return 0;
 }
 
-static udp_packet_classification_t classify_udp_packet(const uint8_t *data, size_t blen) {
+static udp_packet_classification_t classify_federation_packet(const uint8_t *data, size_t blen) {
+  if (!turn_params.federation_no_dtls) {
+#if DTLS_SUPPORTED
+    if (is_dtls_handshake_message(data, (int)blen)) {
+      return UDP_PACKET_CLASS_DTLS_HANDSHAKE;
+    }
+    if (is_dtls_message(data, (int)blen)) {
+      return UDP_PACKET_CLASS_DTLS_OTHER;
+    }
+#endif
+    return UDP_PACKET_CLASS_INVALID;
+  }
+  /* Plain UDP federation data starts with a 4-byte channel header. */
+  return (blen >= 4) ? UDP_PACKET_CLASS_FEDERATION : UDP_PACKET_CLASS_INVALID;
+}
+
+static udp_packet_classification_t classify_udp_packet(const dtls_listener_relay_server_type *server,
+                                                       const uint8_t *data, size_t blen) {
+  if (server->federation_listener) {
+    return classify_federation_packet(data, blen);
+  }
+
   size_t candidate_len = blen;
   uint16_t chnum = 0;
   uint32_t old_stun_cookie = 0;
@@ -1301,8 +1412,8 @@ static int receive_udp_batch_recvmmsg(dtls_listener_relay_server_type *server, e
   for (int j = 0; j < rc; ++j) {
     ioa_network_buffer_set_size(state->elems[j], state->msgs[j].msg_len);
     ioa_parse_udp_recvmsg_cmsg(&(state->msgs[j].msg_hdr), &(state->ttls[j]), &(state->toss[j]), NULL);
-    state->packet_types[j] =
-        classify_udp_packet(ioa_network_buffer_data(state->elems[j]), ioa_network_buffer_get_size(state->elems[j]));
+    state->packet_types[j] = classify_udp_packet(server, ioa_network_buffer_data(state->elems[j]),
+                                                 ioa_network_buffer_get_size(state->elems[j]));
   }
 
   return rc;
@@ -1594,7 +1705,7 @@ start_udp_cycle:
     udp_sendmmsg_batch_begin();
     keep_elem = process_udp_datagram(server, s, elem, &(server->sm.m.sm.nd.src_addr), bsize,
                                      server->sm.m.sm.nd.recv_ttl, server->sm.m.sm.nd.recv_tos,
-                                     (int)classify_udp_packet(ioa_network_buffer_data(elem), (size_t)bsize),
+                                     (int)classify_udp_packet(server, ioa_network_buffer_data(elem), (size_t)bsize),
                                      &packets_processed, &packets_dropped);
     udp_sendmmsg_batch_end();
   }
@@ -1684,7 +1795,11 @@ static int create_server_socket(dtls_listener_relay_server_type *server, int rep
     event_add(server->udp_listen_ev, NULL);
   }
 
-  if (report_creation) {
+  if (report_creation && server->federation_listener) {
+    addr_debug_print(server->verbose, &server->addr,
+                     turn_params.federation_no_dtls ? "UDP federation listener opened on"
+                                                    : "DTLS federation listener opened on");
+  } else if (report_creation) {
     if (!turn_params.no_udp && turn_params.dtls) {
       addr_debug_print(server->verbose, &server->addr, "DTLS/UDP listener opened on");
     } else if (turn_params.dtls) {
@@ -1733,7 +1848,7 @@ static int reopen_server_socket(dtls_listener_relay_server_type *server, evutil_
     /* some UDP sessions may fail due to the race condition here */
 
     set_socket_options(server->udp_listen_s);
-    set_ioa_socket_buf_size(server->udp_listen_s, server->ts->sock_buf_size);
+    set_ioa_socket_buf_size(server->udp_listen_s, server->sock_buf_size);
 
     if (sock_bind_to_device(udp_listen_fd, (unsigned char *)server->ifname) < 0) {
       TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "Cannot bind listener socket to device %s. Error: %s\n", server->ifname,
@@ -1753,7 +1868,11 @@ static int reopen_server_socket(dtls_listener_relay_server_type *server, evutil_
     event_add(server->udp_listen_ev, NULL);
   }
 
-  if (!turn_params.no_udp && turn_params.dtls) {
+  if (server->federation_listener) {
+    addr_debug_print(server->verbose, &server->addr,
+                     turn_params.federation_no_dtls ? "UDP federation listener opened on "
+                                                    : "DTLS federation listener opened on ");
+  } else if (!turn_params.no_udp && turn_params.dtls) {
     addr_debug_print(server->verbose, &server->addr, "DTLS/UDP listener opened on ");
   } else if (turn_params.dtls) {
     addr_debug_print(server->verbose, &server->addr, "DTLS listener opened on ");
@@ -1768,13 +1887,16 @@ static int reopen_server_socket(dtls_listener_relay_server_type *server, evutil_
 
 static int init_server(dtls_listener_relay_server_type *server, const char *ifname, const char *local_address,
                        uint16_t port, int sock_buf_size, int verbose, ioa_engine_handle e, turn_turnserver *ts,
-                       int report_creation, ioa_engine_new_connection_event_handler send_socket) {
+                       int report_creation, ioa_engine_new_connection_event_handler send_socket,
+                       bool federation_listener) {
 
   if (!server) {
     return -1;
   }
 
   server->ts = ts;
+  server->sock_buf_size = sock_buf_size;
+  server->federation_listener = federation_listener;
   server->connect_cb = send_socket;
 
   if (ifname) {
@@ -1836,12 +1958,27 @@ dtls_listener_relay_server_type *create_dtls_listener_server(const char *ifname,
   dtls_listener_relay_server_type *server =
       (dtls_listener_relay_server_type *)allocate_super_memory_engine(e, sizeof(dtls_listener_relay_server_type));
 
-  if (init_server(server, ifname, local_address, port, sock_buf_size, verbose, e, ts, report_creation, send_socket) <
-      0) {
+  if (init_server(server, ifname, local_address, port, sock_buf_size, verbose, e, ts, report_creation, send_socket,
+                  false) < 0) {
     return NULL;
   } else {
     return server;
   }
+}
+
+dtls_listener_relay_server_type *create_dtls_federation_listener_server(const char *ifname, const char *local_address,
+                                                                        uint16_t port, int sock_buf_size, int verbose,
+                                                                        ioa_engine_handle e) {
+
+  dtls_listener_relay_server_type *server =
+      (dtls_listener_relay_server_type *)allocate_super_memory_engine(e, sizeof(dtls_listener_relay_server_type));
+
+  if (init_server(server, ifname, local_address, port, sock_buf_size, verbose, e, NULL, 1, NULL, true) < 0) {
+    return NULL;
+  }
+
+  federation_init(server);
+  return server;
 }
 
 ioa_engine_handle get_engine(dtls_listener_relay_server_type *server) {
@@ -1849,6 +1986,25 @@ ioa_engine_handle get_engine(dtls_listener_relay_server_type *server) {
     return server->e;
   }
   return NULL;
+}
+
+ioa_socket_handle turn_dtls_listener_get_socket(dtls_listener_relay_server_type *server) {
+  return server ? server->udp_listen_s : NULL;
+}
+
+ur_addr_map *turn_dtls_listener_get_children(dtls_listener_relay_server_type *server) {
+  if (!server) {
+    return NULL;
+  }
+  if (!(server->children_ss)) {
+    server->children_ss = (ur_addr_map *)allocate_super_memory_engine(server->e, sizeof(ur_addr_map));
+    ur_addr_map_init(server->children_ss);
+  }
+  return server->children_ss;
+}
+
+ioa_addr *turn_dtls_listener_get_addr(dtls_listener_relay_server_type *server) {
+  return server ? &(server->addr) : NULL;
 }
 
 //////////// UDP send ////////////////

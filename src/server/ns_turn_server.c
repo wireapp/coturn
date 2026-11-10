@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -34,6 +35,8 @@
 
 #include "ns_turn_server.h"
 
+#include "../apps/relay/dtls_listener.h"
+#include "../apps/relay/federation.h"
 #include "../apps/relay/ns_ioalib_impl.h"
 #include "ns_turn_allocation.h"
 #include "ns_turn_ioalib.h"
@@ -159,6 +162,7 @@ static int attach_socket_to_session(turn_turnserver *server, ioa_socket_handle s
 static ts_ur_super_session *mobile_complete_transition(turn_turnserver *server, ts_ur_super_session *pending_ss);
 static void mobile_abort_transition(turn_turnserver *server, ts_ur_super_session *orig_ss);
 static void client_to_be_allocated_timeout_handler(ioa_engine_handle e, void *arg);
+static void client_ss_federation_allocation_timeout_handler(ioa_engine_handle e, void *arg);
 
 static int check_stun_auth(turn_turnserver *server, ts_ur_super_session *ss, stun_tid *tid, int *resp_constructed,
                            int *err_code, const uint8_t **reason, ioa_net_data *in_buffer,
@@ -863,6 +867,35 @@ void turn_cancel_session(turn_turnserver *server, turnsession_id sid) {
   }
 }
 
+void turn_send_federation_data(turn_turnserver *server, turnsession_id sid, ioa_network_buffer_handle nbh, int ttl,
+                               int tos) {
+  if (!server) {
+    ioa_network_buffer_delete(NULL, nbh);
+    return;
+  }
+  ts_ur_super_session *ss = get_session_from_map(server, sid);
+  if (ss && ss->client_socket) {
+    addr_debug_print(eve(server->verbose), &ss->client_socket->remote_addr, "Federation data being relayed to");
+    send_data_from_ioa_socket_nbh(ss->client_socket, NULL, nbh, ttl, tos, NULL);
+  } else {
+    ioa_network_buffer_delete(server->e, nbh);
+  }
+}
+
+/* Federation allocations have no relay socket, so their lifetime timer is kept here. */
+static void set_federation_allocation_lifetime(turn_turnserver *server, ts_ur_super_session *ss, turn_time_t lifetime) {
+  ioa_timer_handle ev = set_ioa_timer(server->e, lifetime, 0, client_ss_federation_allocation_timeout_handler, ss, 0,
+                                      "client_ss_federation_allocation_timeout_handler");
+  set_federation_allocation_lifetime_ev(&(ss->alloc), server->ctime + lifetime, ev);
+}
+
+/* The federation cid is returned to the client as a CHANNEL-NUMBER attribute. */
+static void add_federation_cid(const allocation *alloc, ioa_network_buffer_handle nbh, size_t *len) {
+  if (alloc->federation_cid) {
+    stun_attr_add_channel_number_str(ioa_network_buffer_data(nbh), len, alloc->federation_cid);
+  }
+}
+
 static ts_ur_super_session *get_session_from_mobile_map(turn_turnserver *server, mobile_id_t mid) {
   ts_ur_super_session *ss = NULL;
   if (server && *(server->mobility) && server->mobile_connections_map && mid) {
@@ -1146,8 +1179,14 @@ static int handle_turn_allocate(turn_turnserver *server, ts_ur_super_session *ss
       size_t len = ioa_network_buffer_get_size(nbh);
       ioa_addr xor_relayed_addr1, *pxor_relayed_addr1 = NULL;
       ioa_addr xor_relayed_addr2, *pxor_relayed_addr2 = NULL;
-      ioa_addr *relayed_addr1 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET));
-      ioa_addr *relayed_addr2 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET6));
+      ioa_addr *relayed_addr1 = NULL;
+      ioa_addr *relayed_addr2 = NULL;
+      if (alloc->use_federation) {
+        relayed_addr1 = &server->federation_addr;
+      } else {
+        relayed_addr1 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET));
+        relayed_addr2 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET6));
+      }
 
       if (get_relay_session_failure(alloc, AF_INET)) {
         addr_set_any(&xor_relayed_addr1);
@@ -1167,7 +1206,9 @@ static int handle_turn_allocate(turn_turnserver *server, ts_ur_super_session *ss
 
       if (pxor_relayed_addr1 || pxor_relayed_addr2) {
         uint32_t lifetime = 0;
-        if (pxor_relayed_addr1) {
+        if (alloc->use_federation) {
+          lifetime = (alloc->federation_expiration_time - server->ctime);
+        } else if (pxor_relayed_addr1) {
           lifetime = (get_relay_session(alloc, pxor_relayed_addr1->ss.sa_family)->expiration_time - server->ctime);
         } else if (pxor_relayed_addr2) {
           lifetime = (get_relay_session(alloc, pxor_relayed_addr2->ss.sa_family)->expiration_time - server->ctime);
@@ -1176,6 +1217,7 @@ static int handle_turn_allocate(turn_turnserver *server, ts_ur_super_session *ss
                                        get_remote_addr_from_ioa_socket(ss->client_socket), lifetime,
                                        *(server->max_allocate_lifetime), 0, NULL, 0, ss->s_mobile_id,
                                        server->include_reason_string);
+        add_federation_cid(alloc, nbh, &len);
         ioa_network_buffer_set_size(nbh, len);
         *resp_constructed = 1;
       }
@@ -1212,6 +1254,9 @@ static int handle_turn_allocate(turn_turnserver *server, ts_ur_super_session *ss
           }
           memcpy(username, value, ulen);
           username[ulen] = 0;
+          if (server->federation_service && !strncmp((char *)username, "sft-", 4)) {
+            alloc->use_federation = true;
+          }
           if (!is_secure_string(username, 1)) {
             TURN_LOG_FUNC(TURN_LOG_LEVEL_ERROR, "%s: wrong username: %s\n", __FUNCTION__, (char *)username);
             username[0] = 0;
@@ -1457,7 +1502,16 @@ static int handle_turn_allocate(turn_turnserver *server, ts_ur_super_session *ss
           *reason = (const uint8_t *)"Server is draining, then will shutdown, please try another server";
         }
 
-        if (!(*err_code)) {
+        if (!(*err_code) && alloc->use_federation) {
+          // Federation allocations get a cid on the federation listener instead of relay sockets.
+          alloc->federation_cid = federation_add_connection(alloc);
+          if (alloc->federation_cid) {
+            set_federation_allocation_lifetime(server, ss, lifetime);
+          } else {
+            *err_code = 500;
+            *reason = (const uint8_t *)"Cannot create federation connection";
+          }
+        } else if (!(*err_code)) {
           if (!af4 && !af6) {
             switch (server->allocation_default_address_family) {
             case ALLOCATION_DEFAULT_ADDRESS_FAMILY_KEEP:
@@ -1558,8 +1612,14 @@ static int handle_turn_allocate(turn_turnserver *server, ts_ur_super_session *ss
 
           ioa_addr xor_relayed_addr1, *pxor_relayed_addr1 = NULL;
           ioa_addr xor_relayed_addr2, *pxor_relayed_addr2 = NULL;
-          ioa_addr *relayed_addr1 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET));
-          ioa_addr *relayed_addr2 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET6));
+          ioa_addr *relayed_addr1 = NULL;
+          ioa_addr *relayed_addr2 = NULL;
+          if (alloc->use_federation) {
+            relayed_addr1 = &server->federation_addr;
+          } else {
+            relayed_addr1 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET));
+            relayed_addr2 = get_local_addr_from_ioa_socket(get_relay_socket_ss(ss, AF_INET6));
+          }
 
           if (get_relay_session_failure(alloc, AF_INET)) {
             addr_set_any(&xor_relayed_addr1);
@@ -1583,6 +1643,7 @@ static int handle_turn_allocate(turn_turnserver *server, ts_ur_super_session *ss
                                            pxor_relayed_addr2, get_remote_addr_from_ioa_socket(ss->client_socket),
                                            lifetime, *(server->max_allocate_lifetime), 0, NULL, out_reservation_token,
                                            ss->s_mobile_id, server->include_reason_string);
+            add_federation_cid(alloc, nbh, &len);
 
             if (ss->bps) {
               stun_attr_add_bandwidth_str(ioa_network_buffer_data(nbh), &len, ss->bps);
@@ -2041,6 +2102,10 @@ static int handle_turn_refresh(turn_turnserver *server, ts_ur_super_session *ss,
 
                 mobile_begin_transition(server, orig_ss, ss);
 
+                if (orig_ss->alloc.use_federation) {
+                  set_federation_allocation_lifetime(server, orig_ss, lifetime ? lifetime : 1);
+                }
+
                 turn_report_allocation_set(&(orig_ss->alloc), lifetime, 1);
 
                 // Build the REFRESH success response carrying the new ticket. It
@@ -2121,6 +2186,11 @@ static int handle_turn_refresh(turn_turnserver *server, ts_ur_super_session *ss,
         }
 
       } else {
+
+        if (a->use_federation) {
+          // A zero lifetime deletes the allocation, which the timer then does after a second.
+          set_federation_allocation_lifetime(server, ss, lifetime ? lifetime : 1);
+        }
 
         turn_report_allocation_set(&(ss->alloc), lifetime, 1);
 
@@ -2870,7 +2940,10 @@ static int handle_turn_channel_bind(turn_turnserver *server, ts_ur_super_session
   allocation *a = get_allocation_ss(ss);
   int addr_found = 0;
 
-  if (ss->is_tcp_relay) {
+  if (a->use_federation) {
+    *err_code = 403;
+    *reason = (const uint8_t *)"Channel bind cannot be used with a federation allocation";
+  } else if (ss->is_tcp_relay) {
     *err_code = 403;
     *reason = (const uint8_t *)"Channel bind cannot be used with TCP relay";
   } else if (!is_allocation_valid(a)) {
@@ -3290,6 +3363,28 @@ static int handle_turn_send(turn_turnserver *server, ts_ur_super_session *ss, in
 
       *err_code = 420;
 
+    } else if (!addr_any(&peer_addr) && len >= 0 && a->use_federation) {
+
+      // Federation allocations relay to any peer through the federation listener, without permissions.
+      ioa_network_buffer_handle nbh = in_buffer->nbh;
+      if (value && len > 0) {
+        const uint16_t offset = (uint16_t)(value - ioa_network_buffer_data(nbh));
+        ioa_network_buffer_add_offset_size(nbh, offset, 0, len);
+      } else {
+        len = 0;
+        ioa_network_buffer_set_size(nbh, len);
+      }
+      ioa_network_buffer_header_init(nbh);
+      int skip = 0;
+      federation_send_data((dtls_listener_relay_server_type *)(*server->federation_service), &peer_addr, nbh,
+                           in_buffer->recv_ttl - 1, in_buffer->recv_tos, &skip);
+      if (!skip) {
+        ++(ss->peer_sent_packets);
+        ss->peer_sent_bytes += len;
+        turn_report_session_usage(ss, 0);
+      }
+      in_buffer->nbh = NULL;
+
     } else if (!addr_any(&peer_addr) && len >= 0) {
 
       turn_permission_info *tinfo = NULL;
@@ -3381,7 +3476,10 @@ static int handle_turn_create_permission(turn_turnserver *server, ts_ur_super_se
 
   allocation *a = get_allocation_ss(ss);
 
-  if (is_allocation_valid(a)) {
+  if (a->use_federation) {
+    *err_code = 403;
+    *reason = (const uint8_t *)"Create permission cannot be used with a federation allocation";
+  } else if (is_allocation_valid(a)) {
 
     {
       stun_attr_ref sar =
@@ -4682,6 +4780,11 @@ int shutdown_client_connection(turn_turnserver *server, ts_ur_super_session *ss,
     server->disconnect(ss);
   }
 
+  if (ss->alloc.federation_cid) {
+    federation_remove_connection(ss->alloc.federation_cid);
+    ss->alloc.federation_cid = 0;
+  }
+
   if (server->verbose) {
 
     char sraddr[MAX_IOA_ADDR_STRING] = "";
@@ -4754,6 +4857,10 @@ static void client_to_be_allocated_timeout_handler(ioa_engine_handle e, void *ar
     to_close = 1;
   } else if (get_ioa_socket_app_type(s) == HTTPS_CLIENT_SOCKET) {
     ;
+  } else if (ss->alloc.use_federation) {
+    if (!(ss->alloc.federation_lifetime_ev)) {
+      to_close = 1;
+    }
   } else {
     ioa_socket_handle rs4 = ss->alloc.relay_sessions[ALLOC_IPV4_INDEX].s;
     ioa_socket_handle rs6 = ss->alloc.relay_sessions[ALLOC_IPV6_INDEX].s;
@@ -4808,6 +4915,29 @@ static int write_client_connection(turn_turnserver *server, ts_ur_super_session 
     FUNCEND;
     return ret;
   }
+}
+
+static void client_ss_federation_allocation_timeout_handler(ioa_engine_handle e, void *arg) {
+
+  UNUSED_ARG(e);
+
+  if (!arg) {
+    return;
+  }
+
+  ts_ur_super_session *ss = (ts_ur_super_session *)arg;
+  turn_turnserver *server = (turn_turnserver *)(ss->server);
+
+  if (!server) {
+    clear_allocation(get_allocation_ss(ss), get_ioa_socket_type(ss->client_socket));
+    return;
+  }
+
+  FUNCSTART;
+
+  shutdown_client_connection(server, ss, 1, "federation allocation timeout");
+
+  FUNCEND;
 }
 
 static void client_ss_allocation_timeout_handler(ioa_engine_handle e, void *arg) {

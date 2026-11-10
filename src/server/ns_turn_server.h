@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -74,7 +75,14 @@ extern int TURN_MAX_ALLOCATE_TIMEOUT_STUN_ONLY;
 
 typedef uint8_t turnserver_id;
 
-enum _MESSAGE_TO_RELAY_TYPE { RMT_UNKNOWN = 0, RMT_SOCKET, RMT_CB_SOCKET, RMT_MOBILE_SOCKET, RMT_CANCEL_SESSION };
+enum _MESSAGE_TO_RELAY_TYPE {
+  RMT_UNKNOWN = 0,
+  RMT_SOCKET,
+  RMT_CB_SOCKET,
+  RMT_MOBILE_SOCKET,
+  RMT_CANCEL_SESSION,
+  RMT_FEDERATION_SEND
+};
 typedef enum _MESSAGE_TO_RELAY_TYPE MESSAGE_TO_RELAY_TYPE;
 
 ///////// ALLOCATION DEFAULT ADDRESS FAMILY TYPES /////////////////////
@@ -226,6 +234,11 @@ struct _turn_turnserver {
 
   bool multiplex_peer_mode;
 
+  /* Federation: relayed address handed to "sft-" allocations, and a pointer to the federation listener pointer
+   * (NULL when federation is not configured). */
+  ioa_addr federation_addr;
+  void **federation_service;
+
   /* Both of these are pointers into turn_params so the CLI flags affect
    * every relay thread without per-thread copies. They must stay pointers
    * (not a `bool`/value copy): the server dereferences them live at the use
@@ -305,6 +318,8 @@ int report_turn_session_info(turn_turnserver *server, ts_ur_super_session *ss, i
 turn_time_t get_turn_server_time(turn_turnserver *server);
 
 void turn_cancel_session(turn_turnserver *server, turnsession_id sid);
+void turn_send_federation_data(turn_turnserver *server, turnsession_id sid, ioa_network_buffer_handle nbh, int ttl,
+                               int tos);
 
 /* Non-static relay input handler — called by multiplex-peer dispatch */
 void turn_peer_input_handler(ioa_socket_handle s, int event_type, ioa_net_data *data, void *arg, int can_resume);

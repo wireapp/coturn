@@ -71,6 +71,11 @@ LINK_STUB(turnserver_accept_tcp_client_data_connection)
 LINK_STUB(udp_send_message)
 LINK_STUB(update_white_and_black_lists)
 
+/* Federation (Wire). */
+LINK_STUB(create_dtls_federation_listener_server)
+LINK_STUB(federation_close_connections)
+LINK_STUB(turn_send_federation_data)
+
 /* Data symbols netengine.c references (mainrelay.c / turn_admin_server.c
  * normally define them). Only their addresses are taken by code the tests
  * never run, so an over-sized zeroed blob stands in for struct admin_server. */

@@ -76,3 +76,8 @@ LINK_STUB(try_acme_redirect)
 LINK_STUB(mp_deregister_permission_peers)
 LINK_STUB(mp_deregister_session_peers)
 LINK_STUB(mp_register_peer)
+
+/* Federation (Wire); only reached when a federation listener is configured. */
+LINK_STUB(federation_add_connection)
+LINK_STUB(federation_remove_connection)
+LINK_STUB(federation_send_data)

@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -65,9 +66,17 @@ dtls_listener_relay_server_type *create_dtls_listener_server(const char *ifname,
                                                              int report_creation,
                                                              ioa_engine_new_connection_event_handler send_socket);
 
+dtls_listener_relay_server_type *create_dtls_federation_listener_server(const char *ifname, const char *local_address,
+                                                                        uint16_t port, int sock_buf_size, int verbose,
+                                                                        ioa_engine_handle e);
+
 void udp_send_message(dtls_listener_relay_server_type *server, ioa_network_buffer_handle nbh, ioa_addr *dest);
 
 ioa_engine_handle get_engine(dtls_listener_relay_server_type *server);
+
+ioa_socket_handle turn_dtls_listener_get_socket(dtls_listener_relay_server_type *server);
+ur_addr_map *turn_dtls_listener_get_children(dtls_listener_relay_server_type *server);
+ioa_addr *turn_dtls_listener_get_addr(dtls_listener_relay_server_type *server);
 
 ///////////////////////////////////////////
 

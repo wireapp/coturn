@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -180,6 +181,8 @@ struct listener_server {
   dtls_listener_relay_server_type ***udp_services;
   dtls_listener_relay_server_type ***dtls_services;
   dtls_listener_relay_server_type ***aux_udp_services;
+  dtls_listener_relay_server_type *federation_service;
+  ioa_engine_handle federation_ioa_eng;
 };
 
 /////////// PARAMS //////////////////////////////////
@@ -384,9 +387,24 @@ typedef struct _turn_params_ {
    * across a fleet); false means an ephemeral random key is generated at
    * startup. */
   bool stateless_nonce_key_set;
+
+  /* Federation (Wire) */
+  bool federation_listening_ip_set;
+  ioa_addr federation_listening_ip;
+  uint16_t federation_listening_port;
+  bool federation_no_dtls;
+  char federation_cert_file[1025];
+  char federation_pkey_file[1025];
+  char federation_pkey_pwd[513];
+  SSL_CTX *federation_dtls_client_ctx;
+  SSL_CTX *federation_dtls_server_ctx;
 } turn_params_t;
 
 extern turn_params_t turn_params;
+
+static inline bool turn_federation_enabled(void) {
+  return turn_params.federation_listening_ip_set && turn_params.federation_listening_port;
+}
 
 ////////////////  Listener server /////////////////
 
@@ -422,6 +440,8 @@ int add_relay_addr(const char *addr);
 
 ////////// SSL CTX ////////////////////
 void set_ssl_ctx(ioa_engine_handle e, turn_params_t *params);
+void turn_set_ssl_ctx(SSL_CTX **out, const char *protocol, const SSL_METHOD *method, const char *cert_file,
+                      const char *pkey_file, char *pkey_pwd);
 
 ///////// Auth ////////////////
 
@@ -434,6 +454,8 @@ void setup_server(void);
 void shutdown_server(void);
 void run_listener_server(struct listener_server *ls);
 void enable_drain_mode(void);
+
+void send_federation_data_message_to_relay(turnsession_id sid, ioa_network_buffer_handle nbh, int ttl, int tos);
 
 ////////// BPS ////////////////
 

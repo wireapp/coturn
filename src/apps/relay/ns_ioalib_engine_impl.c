@@ -4,6 +4,7 @@
  * https://opensource.org/license/bsd-3-clause
  *
  * Copyright (C) 2011, 2012, 2013 Citrix Systems
+ * Copyright (C) 2022 Wire Swiss GmbH
  *
  * All rights reserved.
  *
@@ -166,8 +167,6 @@ static void socket_input_handler(evutil_socket_t fd, short what, void *arg);
 static void socket_output_handler_bev(struct bufferevent *bev, void *arg);
 static void socket_input_handler_bev(struct bufferevent *bev, void *arg);
 static void eventcb_bev(struct bufferevent *bev, short events, void *arg);
-
-static int send_ssl_backlog_buffers(ioa_socket_handle s);
 
 static int set_accept_cb(ioa_socket_handle s, accept_cb acb, void *arg);
 
@@ -2187,6 +2186,9 @@ void close_ioa_socket(ioa_socket_handle s) {
       s->session->client_socket = NULL;
     }
 
+    IOA_EVENT_DEL(s->federation_handshake_tmr);
+    IOA_EVENT_DEL(s->federation_heartbeat_tmr);
+
     s->session = NULL;
     s->sub_session = NULL;
     s->magic = 0;
@@ -3855,7 +3857,7 @@ try_start:
   }
 }
 
-static int send_ssl_backlog_buffers(ioa_socket_handle s) {
+int send_ssl_backlog_buffers(ioa_socket_handle s) {
   int ret = 0;
   if (s) {
     stun_buffer_list_elem *buf_elem = s->bufs.head;
@@ -4353,9 +4355,16 @@ int send_data_from_ioa_socket_nbh(ioa_socket_handle s, ioa_addr *dest_addr, ioa_
     /* ---- OpenSSL (DTLS) transport ---- */
     if (s->ssl) {
       udp_sendmmsg_flush_if_pending();
-      send_ssl_backlog_buffers(s);
-      ret = ssl_send(s, (char *)ioa_network_buffer_data(nbh), ioa_network_buffer_get_size(nbh),
-                     (s->e ? s->e->verbose : TURN_VERBOSE_NONE));
+      /* While a handshake is in progress, only the first write goes to OpenSSL (it starts a client handshake);
+       * later ones are queued. SSL_write() mid-handshake can fail with "read bio not set", because ssl_read()
+       * detaches the read BIO the handshake still needs. */
+      if (SSL_is_init_finished(s->ssl) || buffer_list_empty(&(s->bufs))) {
+        send_ssl_backlog_buffers(s);
+        ret = ssl_send(s, (char *)ioa_network_buffer_data(nbh), ioa_network_buffer_get_size(nbh),
+                       (s->e ? s->e->verbose : TURN_VERBOSE_NONE));
+      } else {
+        ret = 0;
+      }
       if (ret < 0) {
         s->tobeclosed = 1;
       } else if (ret == 0) {
