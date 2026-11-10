@@ -110,8 +110,24 @@ cd examples
 ./run_tests_dtls_default.sh     # pins that the DTLS listeners stay down
                                 # unless --dtls is given, that --dtls brings
                                 # them up
-./run_tests_prom.sh             # only when Prometheus support is built
+./run_tests_expiry.sh           # permission/channel expiry sweep reaps
+                                # entries mid-session.
+./run_tests_dscp.sh             # DSCP/TOS preserved across the relay.
+                                # Needs Linux + tcpdump; SKIPs otherwise.
+./run_tests_mobility_quota.sh   # --mobility must not bypass --user-quota.
+                                # Needs python3; FAILs without it.
+./run_tests_mobility_resume_flood.sh  # chained mobility resumes must not
+                                # leak pending sessions. Needs python3.
+./run_tests_ratelimit_401.sh    # --unauthorized-ratelimit end to end.
+                                # Needs python3 for the reflection case.
+./run_tests_stateless_binding.sh  # listener-answered Binding requests stay
+                                # wire-identical. Needs python3.
+./run_tests_prom.sh             # only when Prometheus support is built.
+                                # Needs wget; FAILs without it.
 cd ..
+
+# Federation DTLS handshake tests (cert, CA, whitelist and cipher checks)
+cd test && ./run_federation_dtls_handlshake_tests.sh && cd ..
 
 # Fuzzing smoke tests (increase runs/time for fuzzing-related changes)
 fuzzing/run-local.sh ASan 0 -runs=1
@@ -120,6 +136,11 @@ fuzzing/run-local.sh ASan 1 -runs=1
 
 Treat any `FAIL` line from the example scripts as a test failure even if the
 script exits with status 0.
+
+Several scripts print `SKIP` and exit 0 when `python3`, `wget` or `tcpdump` is
+missing, so a green run can hide untested paths. Install them, and treat any
+`SKIP` that the script comments don't explain for your platform as a gap in
+coverage.
 
 On macOS, run the Linux validation in Docker as well. The fuzzing smoke tests
 build the reusable `coturn-fuzz-local` image; then run a clean Linux build and
@@ -131,7 +152,8 @@ docker run --rm \
   -v "$PWD:/src:ro" \
   --entrypoint bash \
   coturn-fuzz-local \
-  -lc 'apt-get update && apt-get install -y --no-install-recommends git libmicrohttpd-dev && \
+  -lc 'apt-get update && apt-get install -y --no-install-recommends \
+         git libmicrohttpd-dev python3 wget tcpdump && \
        cp -a /src /tmp/coturn && \
        git config --global --add safe.directory /tmp/coturn && \
        cd /tmp/coturn && \
@@ -140,11 +162,19 @@ docker run --rm \
        cmake --build build-linux --parallel $(nproc) && \
        ctest --test-dir build-linux --output-on-failure && \
        rm -rf build && ln -s build-linux build && \
-       cd examples && ./run_tests.sh && ./run_tests_conf.sh && \
-       ./run_tests_mobile.sh && ./run_tests_multiplex_peer.sh && \
-       ./run_tests_rfc5780.sh && ./run_tests_stateless_nonce.sh && \
-       ./run_tests_ipv6_relay.sh && ./run_tests_dtls_default.sh'
+       cd examples && failed=0 && \
+       for s in run_tests*.sh; do \
+         ./$s > /tmp/$s.log 2>&1; rc=$?; \
+         echo "RESULT $s exit=$rc"; grep -E "FAIL|SKIP" /tmp/$s.log; \
+         if [ $rc -ne 0 ] || grep -q FAIL /tmp/$s.log; then failed=1; fi; \
+       done && \
+       cd ../test && ./run_federation_dtls_handlshake_tests.sh || failed=1; \
+       exit $failed'
 ```
+
+The loop runs every `examples/run_tests*.sh`, so new scripts are picked up
+without editing this command. On Linux with the packages above, none of them
+should print `SKIP`. Full logs are in `/tmp/<script>.log` inside the container.
 
 Also validate the packaged Docker image. Run the same stale-output cleanup at
 the repo root first (see above) so the image build context does not pick up
