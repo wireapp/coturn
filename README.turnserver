@@ -436,6 +436,11 @@ Options with values:
 
 --federation-pkey-pwd	Federation private key file password, if it is in encrypted format.
 
+--federation-CA-file	CA file in OpenSSL format, to verify the certificates of the federation
+			peers (DTLS mutual authentication). Unlike CA-file, it does not make the TURN
+			server ask TURN clients for certificates on its TLS/DTLS listeners.
+			If not set, CA-file is used for federation, as before this option existed.
+
 --federation-remote-whitelist	If federation-no-dtls is false, then you must configure
 			a whitelist for DTLS mutual authenication (MTLS) connection verification.
 			This setting can be repeated multiple times to form a list of pairs.  Each pair
