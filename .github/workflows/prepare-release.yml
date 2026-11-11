@@ -13,8 +13,8 @@ on:
       type:
         description: 'Release channel'
         type: choice
-        options: [ga, alpha, beta, rc]
-        default: ga
+        options: [alpha, beta, rc, ga]
+        default: alpha
         required: true
       bump:
         description: 'Applies when the latest release is a GA: the next GA, or the first pre-release of the next line'

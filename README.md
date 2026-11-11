@@ -13,6 +13,26 @@ The upstream README, with the list of supported RFCs and platforms, is kept as [
 - **Certificate reload** on `SIGUSR2`, for the TURNS and the federation certificates. The chart runs a sidecar that sends it when the mounted secrets change.
 - **The Helm chart**, with Prometheus metrics, detection of the external IP, SNAT of the federation port and a pod disruption budget.
 
+## How to release
+
+1. Prepare the release files in [`publication/`](publication) (release note, declaration, compatibility file) and merge them into `dev`.
+2. Start the `Prepare release` workflow, from the Actions tab or the command line. For the GA of the version prepared on `dev`:
+
+   ```sh
+   gh workflow run prepare-release.yml -R wireapp/coturn --ref dev -f source_branch=dev -f type=ga -f bump=patch
+   ```
+
+   `type` is the channel (`alpha`, `beta`, `rc`, `ga`). `bump` counts when the last release was a GA: it picks the next version, for the next GA or for the first pre-release of a new line. After a pre-release, keep `patch`: the GA takes the version of the pre-release.
+
+   For a patch of an LTS line, release from its branch, for example `release/5.6`. The release files are read from the source branch, so they go into `release/5.6`, not `dev`:
+
+   ```sh
+   gh workflow run prepare-release.yml -R wireapp/coturn --ref dev -f source_branch=release/5.6 -f type=ga -f bump=patch
+   ```
+3. Approve the publication: the `Publish release` job waits for a release manager in the `release-publication` environment.
+4. The release is then finalised: the GitHub Release is published with its tag, the image is promoted on Quay and the chart published, `wire-builds` is bumped for a release from `dev`, and the release manager is notified.
+5. For now, pre-releases and GAs land in staging. Pushing to production is a separate, explicit step with its own workflow.
+
 ## Versions and artifacts
 
 Since 5.6.0 the versions are SemVer `X.Y.Z`, tagged `vX.Y.Z`. The image and the chart share the version:
@@ -37,12 +57,12 @@ Releases before 5.6.0 were named `4.6.2-federation-wireapp.N`.
 
 Dependencies: libevent2 and OpenSSL, plus libmicrohttpd and [prometheus-client-c](https://github.com/digitalocean/prometheus-client-c) for the metrics, and the client libraries of the databases you want. On Debian or Ubuntu:
 
-```
+```sh
 apt-get install build-essential pkg-config libevent-dev libssl-dev \
   libpq-dev libmariadb-dev libsqlite3-dev libhiredis-dev libmongoc-dev libmicrohttpd-dev
 ```
 
-```
+```sh
 ./configure
 make
 make check
@@ -51,7 +71,7 @@ make check
 
 The image is built by [`docker/Dockerfile`](docker/Dockerfile) (Debian bookworm, OpenSSL 3), and [`.github/scripts/test-image.sh`](.github/scripts/test-image.sh) checks it, including the federation DTLS handshake tests of [`test/`](test):
 
-```
+```sh
 docker build -f docker/Dockerfile -t coturn:local .
 IMAGE=coturn:local .github/scripts/test-image.sh
 ```
@@ -62,7 +82,7 @@ IMAGE=coturn:local .github/scripts/test-image.sh
 - `dev.yml` runs on every push to `dev`: it publishes the dev build, image and chart, and declares it to the release manager.
 - `prepare-release.yml` is started by hand with the source branch, the channel (`ga`, `alpha`, `beta`, `rc`) and the bump. It builds the candidate and a draft GitHub Release. `publish-release.yml` then waits for a release manager's approval in the `release-publication` environment, promotes the image by digest, publishes the chart, tags the commit and declares the release.
 
-The release flow and the files in `publication/` follow Wire's release standard ([wire-onprem-first-decisions](https://github.com/wireapp/wire-onprem-first-decisions), ADR-0020 to ADR-0022), with the shared actions of [wire-rm-actions](https://github.com/wireapp/wire-rm-actions).
+The release flow and the files in `publication/` follow Wire's release standard with the shared actions of [wire-rm-actions](https://github.com/wireapp/wire-rm-actions).
 
 ## Contributing
 
