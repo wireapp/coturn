@@ -1,164 +1,96 @@
-[![Docker CI](https://github.com/coturn/coturn/actions/workflows/docker.yml/badge.svg  "Docker CI")](https://github.com/coturn/coturn/actions/workflows/docker.yml)
-[![Docker Hub](https://img.shields.io/docker/pulls/coturn/coturn?label=Docker%20Hub%20pulls "Docker Hub pulls")](https://hub.docker.com/r/coturn/coturn)
+# coturn, Wire's fork
 
-[Docker Hub](https://hub.docker.com/r/coturn/coturn)
-| [GitHub Container Registry](https://github.com/orgs/coturn/packages/container/package/coturn)
-| [Quay.io](https://quay.io/repository/coturn/coturn)
+Wire's TURN server: upstream [coturn](https://github.com/coturn/coturn) 4.6.2 with the patches Wire needs for its calling services. It ships as the image `quay.io/wire/coturn` and the Helm chart in [`charts/coturn`](charts/coturn), deployed next to [wire-server](https://github.com/wireapp/wire-server) and the SFT.
 
-# Coturn TURN server #
+The upstream README, with the list of supported RFCs and platforms, is kept as [`docs/README.upstream.md`](docs/README.upstream.md).
 
-coturn is a free open source implementation of TURN and STUN Server.
-The TURN Server is a VoIP media traffic NAT traversal server and gateway.
+## What Wire adds
 
-## Installing / Getting started
+- **Federation.** Clients of two coturn instances exchange media through a single tunnel between the servers, over DTLS with mutual certificate authentication and a whitelist of peers. The SFT uses it for federated calls. A client enters federation by allocating with a username that starts with `sft-`. Options `--federation-*` in [`README.turnserver`](README.turnserver).
+- **zrest authentication.** The TURN REST API with Wire's username format and password derivation, sharing its secret with brig. Option `--zrest`.
+- **Drain mode.** On `SIGUSR1` (or `drain` on the CLI) the server stops accepting allocations and waits for the existing ones to end. The chart's preStop hook uses it for rolling restarts.
+- **Rate limiting of 401 responses** per client address, with an allow-list reloaded on `SIGRTMIN+3`, against reflection attacks. Options `--401-req-limit`, `--401-window`, `--401-allowlist`.
+- **Certificate reload** on `SIGUSR2`, for the TURNS and the federation certificates. The chart runs a sidecar that sends it when the mounted secrets change.
+- **The Helm chart**, with Prometheus metrics, detection of the external IP, SNAT of the federation port and a pod disruption budget.
 
-Linux distros may have a version of coturn which you can install by
+## How to release
+
+1. Prepare the release files in [`publication/`](publication) (release note, declaration, compatibility file) and merge them into `dev`.
+2. Start the `Prepare release` workflow, from the Actions tab or the command line. For the GA of the version prepared on `dev`:
+
+   ```sh
+   gh workflow run prepare-release.yml -R wireapp/coturn --ref dev -f source_branch=dev -f type=ga -f bump=patch
+   ```
+
+   `type` is the channel (`alpha`, `beta`, `rc`, `ga`). `bump` counts when the last release was a GA: it picks the next version, for the next GA or for the first pre-release of a new line. After a pre-release, keep `patch`: the GA takes the version of the pre-release.
+
+   For a patch of an LTS line, release from its branch, for example `release/5.6`. The release files are read from the source branch, so they go into `release/5.6`, not `dev`:
+
+   ```sh
+   gh workflow run prepare-release.yml -R wireapp/coturn --ref dev -f source_branch=release/5.6 -f type=ga -f bump=patch
+   ```
+3. Approve the publication: the `Publish release` job waits for a release manager in the `release-publication` environment.
+4. The release is then finalised: the GitHub Release is published with its tag, the image is promoted on Quay and the chart published, `wire-builds` is bumped for a release from `dev`, and the release manager is notified.
+5. For now, pre-releases and GAs land in staging. Pushing to production is a separate, explicit step with its own workflow.
+
+## Versions and artifacts
+
+Since 5.6.0 the versions are SemVer `X.Y.Z`, tagged `vX.Y.Z`. The image and the chart share the version:
+
+| Artifact | Location |
+| --- | --- |
+| Image | `quay.io/wire/coturn:X.Y.Z` |
+| Chart, releases | `oci://quay.io/wire/charts/stable/coturn` |
+| Chart, pre-releases and dev builds | `oci://quay.io/wire/charts/dev/coturn` |
+
+Every push to `dev` produces a dev build, `<next version>-<timestamp>.g<sha>`, published to the `dev` chart repository. Pre-releases are `X.Y.Z-alpha.N`, `-beta.N` or `-rc.N`. Each release has a GitHub Release with the release note, the release declaration and the compatibility file from [`publication/`](publication).
+
+Releases before 5.6.0 were named `4.6.2-federation-wireapp.N`.
+
+## Branches
+
+- `dev` is the trunk and the default branch. Every pull request targets it.
+- `release/X.Y` is created at each minor release and receives its patch releases. A fix lands on `dev` first and is backported.
+- `wireapp/4.6.2-federation` is the previous trunk, frozen at the last `4.6.2-federation-wireapp.N` build.
+
+## Building and testing
+
+Dependencies: libevent2 and OpenSSL, plus libmicrohttpd and [prometheus-client-c](https://github.com/digitalocean/prometheus-client-c) for the metrics, and the client libraries of the databases you want. On Debian or Ubuntu:
+
+```sh
+apt-get install build-essential pkg-config libevent-dev libssl-dev \
+  libpq-dev libmariadb-dev libsqlite3-dev libhiredis-dev libmongoc-dev libmicrohttpd-dev
 ```
-apt install coturn
-turnserver --log-file stdout
-```
 
-Or run coturn using docker container:
-```
-docker run -d -p 3478:3478 -p 3478:3478/udp -p 5349:5349 -p 5349:5349/udp -p 49152-65535:49152-65535/udp coturn/coturn
-```
-See more details about using docker container [Docker Readme](https://github.com/coturn/coturn/blob/master/docker/coturn/README.md)
-
-
-## Developing
-
-### Dependencies
-
-coturn requires following dependencies to be installed first
-- libevent2
-
-Optional
-- openssl (to support TLS and DTLS, authorized STUN and TURN)
-- libmicrohttp and [prometheus-client-c](https://github.com/digitalocean/prometheus-client-c) (prometheus interface)
-- MySQL (user database)
-- [Hiredis](https://github.com/redis/hiredis) (user database, monitoring)
-- SQLite (user database)
-- PostgreSQL (user database)
-
-### Building
-```shell
-git clone git@github.com:coturn/coturn.git
-cd coturn
+```sh
 ./configure
 make
+make check
+(cd examples && ./run_tests.sh)
 ```
 
+The image is built by [`docker/Dockerfile`](docker/Dockerfile) (Debian bookworm, OpenSSL 3), and [`.github/scripts/test-image.sh`](.github/scripts/test-image.sh) checks it, including the federation DTLS handshake tests of [`test/`](test):
 
-## Features
+```sh
+docker build -f docker/Dockerfile -t coturn:local .
+IMAGE=coturn:local .github/scripts/test-image.sh
+```
 
-STUN specs:
+## CI and releases
 
-  * [RFC 3489](https://datatracker.ietf.org/doc/html/rfc3489) - "classic" STUN
-  * [RFC 5389](https://datatracker.ietf.org/doc/html/rfc5389) - base "new" STUN specs
-  * [RFC 5769](https://datatracker.ietf.org/doc/html/rfc5769) - test vectors for STUN protocol testing
-  * [RFC 5780](https://datatracker.ietf.org/doc/html/rfc5780) - NAT behavior discovery support
-  * [RFC 7443](https://datatracker.ietf.org/doc/html/rfc7443) - ALPN support for STUN & TURN
-  * [RFC 7635](https://datatracker.ietf.org/doc/html/rfc7635) - oAuth third-party TURN/STUN authorization
-  
-TURN specs:
+- `pr.yml` runs on every pull request: build and tests, image, chart, release files. The four checks are required to merge.
+- `dev.yml` runs on every push to `dev`: it publishes the dev build, image and chart, and declares it to the release manager.
+- `prepare-release.yml` is started by hand with the source branch, the channel (`ga`, `alpha`, `beta`, `rc`) and the bump. It builds the candidate and a draft GitHub Release. `publish-release.yml` then waits for a release manager's approval in the `release-publication` environment, promotes the image by digest, publishes the chart, tags the commit and declares the release.
 
-  * [RFC 5766](https://datatracker.ietf.org/doc/html/rfc5766) - base TURN specs
-  * [RFC 6062](https://datatracker.ietf.org/doc/html/rfc6062) - TCP relaying TURN extension
-  * [RFC 6156](https://datatracker.ietf.org/doc/html/rfc6156) - IPv6 extension for TURN
-  * [RFC 7443](https://datatracker.ietf.org/doc/html/rfc7443) - ALPN support for STUN & TURN
-  * [RFC 7635](https://datatracker.ietf.org/doc/html/rfc7635) - oAuth third-party TURN/STUN authorization
-  * DTLS support (http://tools.ietf.org/html/draft-petithuguenin-tram-turn-dtls-00)
-  * Mobile ICE (MICE) support (http://tools.ietf.org/html/draft-wing-tram-turn-mobility-02)
-  * TURN REST API (http://tools.ietf.org/html/draft-uberti-behave-turn-rest-00)
-  * Origin field in TURN (Multi-tenant TURN Server) (https://tools.ietf.org/html/draft-ietf-tram-stun-origin-06)
-  * TURN Bandwidth draft specs (http://tools.ietf.org/html/draft-thomson-tram-turn-bandwidth-01)
-  * TURN-bis (with dual allocation) draft specs (http://tools.ietf.org/html/draft-ietf-tram-turnbis-04)
+The release flow and the files in `publication/` follow Wire's release standard with the shared actions of [wire-rm-actions](https://github.com/wireapp/wire-rm-actions).
 
-ICE and related specs:
+## Contributing
 
-  * [RFC 5245](https://datatracker.ietf.org/doc/html/rfc5245) - ICE
-  * [RFC 5768](https://datatracker.ietf.org/doc/html/rfc5768) – ICE–SIP
-  * [RFC 6336](https://datatracker.ietf.org/doc/html/rfc6336) – ICE–IANA Registry
-  * [RFC 6544](https://datatracker.ietf.org/doc/html/rfc6544) – ICE–TCP
-  * [RFC 5928](https://datatracker.ietf.org/doc/html/rfc5928) - TURN Resolution Mechanism
+The code is owned by `@wireapp/avs`; the workflows and `publication/` also by `@wireapp/release-managers` (see [`CODEOWNERS`](.github/CODEOWNERS)). Open pull requests against `dev`. Keep the patches on top of upstream as small as you can: the fork is meant to be rebased on newer upstream versions.
 
-The implementation fully supports the following client-to-TURN-server protocols:
+## More documentation
 
-  * UDP (per [RFC 5766](https://datatracker.ietf.org/doc/html/rfc5766))
-  * TCP (per [RFC 5766](https://datatracker.ietf.org/doc/html/rfc5766) and [RFC 6062](https://datatracker.ietf.org/doc/html/rfc6062))
-  * TLS (per [RFC 5766](https://datatracker.ietf.org/doc/html/rfc) and [RFC 6062](https://datatracker.ietf.org/doc/html/rfc6062)): including TLS1.3; ECDHE is supported.
-  * DTLS1.0 and DTLS1.2 (http://tools.ietf.org/html/draft-petithuguenin-tram-turn-dtls-00)
-  * SCTP (experimental implementation).
-
-Relay protocols:
-
-  * UDP (per [RFC 5766](https://datatracker.ietf.org/doc/html/rfc5766))
-  * TCP (per [RFC 6062](https://datatracker.ietf.org/doc/html/rfc6062))
-
-User databases (for user repository, with passwords or keys, if authentication is required):
-
-  * SQLite
-  * MySQL
-  * PostgreSQL
-  * Redis
-  * MongoDB
-  
-  
-Management interfaces:
- * telnet cli 
- * HTTPS interface
-
-
-Monitoring:
- * Redis can be used for status and statistics storage and notification
- * [prometheus](https://prometheus.io/) interface
-
-Message integrity digest algorithms:
-
-  * HMAC-SHA1, with MD5-hashed keys (as required by STUN and TURN standards)
-
-TURN authentication mechanisms:
-
-  * 'classic' long-term credentials mechanism;
-  * TURN REST API (a modification of the long-term mechanism, for time-limited secret-based authentication, for WebRTC applications: http://tools.ietf.org/html/draft-uberti-behave-turn-rest-00);
-  * experimental third-party oAuth-based client authorization option;
-
-Performance and Load Balancing:
-
-When used as a part of an ICE solution, for VoIP connectivity, this TURN server can handle thousands simultaneous calls per CPU (when TURN protocol is used) or tens of thousands calls when only STUN protocol is used. For virtually unlimited scalability a load balancing scheme can be used. The load balancing can be implemented with the following tools (either one or a combination of them):
-
-  * DNS SRV based load balancing;
-  * built-in 300 ALTERNATE-SERVER mechanism (requires 300 response support by the TURN client);
-  * network load-balancer server.
-
-Traffic bandwidth limitation and congestion avoidance algorithms implemented.
-
-Target platforms:
-
-  * Linux (Debian, Ubuntu, Mint, CentOS, Fedora, Redhat, Amazon Linux, Arch Linux, OpenSUSE)
-  * BSD (FreeBSD, NetBSD, OpenBSD, DragonFlyBSD)
-  * Solaris 11
-  * Mac OS X
-  * Cygwin (for non-production R&D purposes)
-  * Windows (native with, e.g., MSVC toolchain)
-
-This project can be successfully used on other `*NIX` platforms, too, but that is not officially supported.
-
-The implementation is supposed to be simple, easy to install and configure. The project focuses on performance, scalability and simplicity. The aim is to provide an enterprise-grade TURN solution.
-
-To achieve high performance and scalability, the TURN server is implemented with the following features:
-
-  * High-performance industrial-strength Network IO engine libevent2 is used
-  * Configurable multi-threading model implemented to allow full usage of available CPU resources (if OS allows multi-threading)
-  * Multiple listening and relay addresses can be configured
-  * Efficient memory model used
-  * The TURN project code can be used in a custom proprietary networking environment. In the TURN server code, an abstract networking API is used. Only couple files in the project have to be re-written to plug-in the TURN server into a proprietary environment. With this project, only implementation for standard UNIX Networking/IO API is provided, but the  user can implement any other environment. The TURN server code was originally developed for a high-performance proprietary corporate environment, then adopted for UNIX Networking API
-  * The TURN server works as a user space process, without imposing any special requirements on the system
-
-
-## Links
-
-- Project homepage: https://coturn.github.io/
-- Repository: https://github.com/coturn/coturn/
-- Issue tracker: https://github.com/coturn/coturn/issues
-- Google group: https://groups.google.com/forum/#!forum/turn-server-project-rfc5766-turn-server
+- [`README.turnserver`](README.turnserver), [`README.turnadmin`](README.turnadmin), [`README.turnutils`](README.turnutils): all the options.
+- [`charts/coturn/README.md`](charts/coturn/README.md): deploying the chart.
+- [`docs/`](docs): the upstream documentation (build, configuration, databases, testing).
+- [`publication/release-note.md`](publication/release-note.md): the note of the release in preparation.
