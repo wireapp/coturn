@@ -4,7 +4,7 @@ consumesApis: []
 
 dependsOn:
   - component: wire-server
-    range: ">=5.0.0"
+    range: "*"
     class: mandatory
     reason: brig hands clients the TURN URIs and credentials signed with the shared zrest secret.
   - resource: public-ip
