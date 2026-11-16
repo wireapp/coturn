@@ -30,7 +30,7 @@ jobs:
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends \
             build-essential pkg-config git ca-certificates \
-            libevent-dev libssl-dev \
+            libevent-dev libssl-dev openssl \
             libpq-dev libmariadb-dev libsqlite3-dev \
             libhiredis-dev libmongoc-dev libmicrohttpd-dev
 
@@ -51,6 +51,15 @@ jobs:
       - name: Client tests
         working-directory: examples
         run: ./run_tests.sh
+
+      - name: Federation DTLS handshake tests
+        working-directory: test
+        run: ./run_federation_dtls_handlshake_tests.sh
+
+      - name: Federation DTLS server logs
+        if: failure()
+        working-directory: test
+        run: tail -n 50 ./*.conf.out || true
 
   image:
     name: Image
