@@ -137,6 +137,79 @@ echo "Q" | timeout 3 openssl s_client -connect $TEST_SERVER -dtls1_2 -cert feder
 check_result "DTLS federation client bad signature cert fails to connect" $FAILURE
 
 
+###################################
+# federation-CA-file Tests
+###################################
+
+# TURNS client on the TLS listener (tls-listening-port=5349) that presents no certificate.
+# With TLS 1.3 the server rejects a missing client certificate only after the handshake, with a
+# certificate_required alert. Keep the connection open for a second (no "Q" on stdin, which would
+# make s_client quit before reading the alert) and look for an alert or error in the output.
+TLS_TEST_SERVER=127.0.0.1:5349
+tls_client_without_cert() {
+  local out
+  out=$(sleep 1 | timeout 3 openssl s_client -connect $TLS_TEST_SERVER -tls1_3 2>&1)
+  ! echo "$out" | grep -qiE "alert|certificate required|errno|connect:|:error:"
+}
+
+# log_contains <message> <log file> <expected text>
+log_contains() {
+  grep -q "$3" "$2"
+  check_result "$1" $SUCCESS
+}
+
+# federation-CA-file only: federation verifies its peers, TURNS clients need no certificate
+start_server turnserver_ecdsa_fedca.conf
+
+echo "Q" | timeout 3 openssl s_client -connect $TEST_SERVER -dtls1_2 -cert federation_ecdsa_cert.pem -key federation_ecdsa_pkey.pem >/dev/null 2>/dev/null
+check_result "federation-CA-file: DTLS federation client connects" $SUCCESS
+
+tls_client_without_cert
+check_result "federation-CA-file: TURNS client without certificate connects" $SUCCESS
+
+log_contains "federation-CA-file: log names federation-CA-file" turnserver_ecdsa_fedca.conf.out "using federation-CA-file"
+
+# federation-CA-file with a valid CA that did not sign the peer
+start_server turnserver_ecdsa_fedca_otherca.conf
+
+echo "Q" | timeout 3 openssl s_client -connect $TEST_SERVER -dtls1_2 -cert federation_ecdsa_cert.pem -key federation_ecdsa_pkey.pem >/dev/null 2>/dev/null
+check_result "federation-CA-file: DTLS federation client signed by another CA fails to connect" $FAILURE
+
+# federation-CA-file that cannot be found: federation rejects peers, the TLS listener stays up
+start_server turnserver_ecdsa_fedca_missing.conf
+
+echo "Q" | timeout 3 openssl s_client -connect $TEST_SERVER -dtls1_2 -cert federation_ecdsa_cert.pem -key federation_ecdsa_pkey.pem >/dev/null 2>/dev/null
+check_result "federation-CA-file missing: DTLS federation client fails to connect" $FAILURE
+
+tls_client_without_cert
+check_result "federation-CA-file missing: TURNS client without certificate connects" $SUCCESS
+
+# CA-file only (configurations from before federation-CA-file): federation falls back to CA-file,
+# and CA-file keeps its upstream meaning of client certificate authentication on the TLS listener
+start_server turnserver_ecdsa_cafile_fallback.conf
+
+echo "Q" | timeout 3 openssl s_client -connect $TEST_SERVER -dtls1_2 -cert federation_ecdsa_cert.pem -key federation_ecdsa_pkey.pem >/dev/null 2>/dev/null
+check_result "CA-file fallback: DTLS federation client connects" $SUCCESS
+
+tls_client_without_cert
+check_result "CA-file fallback: TURNS client without certificate fails to connect" $FAILURE
+
+log_contains "CA-file fallback: log names the fallback" turnserver_ecdsa_cafile_fallback.conf.out "falling back to CA-file"
+
+# no-tls/no-dtls with a relative federation-CA-file that is only found through the
+# config file search directories (./etc/): the path must still be resolved
+mkdir -p etc
+cp ca_ecdsa_cert.pem etc/fedca_search_dir.pem
+start_server turnserver_ecdsa_fedca_notls.conf
+
+echo "Q" | timeout 3 openssl s_client -connect $TEST_SERVER -dtls1_2 -cert federation_ecdsa_cert.pem -key federation_ecdsa_pkey.pem >/dev/null 2>/dev/null
+check_result "federation-CA-file without TLS listeners: relative path is resolved, DTLS federation client connects" $SUCCESS
+
+stop_server
+rm -f etc/fedca_search_dir.pem
+rmdir etc 2>/dev/null
+
+
 # Stop the server
 stop_server
 
