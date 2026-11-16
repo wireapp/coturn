@@ -214,9 +214,17 @@ jobs:
         run: docker buildx build --load --file docker/Dockerfile --tag coturn:candidate .
 
       - name: Test the image
+        id: test
         env:
           IMAGE: coturn:candidate
-        run: .github/scripts/test-image.sh
+          REPORT: ${{ runner.temp }}/federation-dtls-test-report.txt
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_COMMIT: ${{ needs.prepare.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          .github/scripts/test-image.sh
+          echo "report=$REPORT" >> "$GITHUB_OUTPUT"
 
       - name: Login to quay.io with the OIDC token of the job
         id: quay
@@ -375,6 +383,7 @@ jobs:
             /tmp/release-inputs/release-note.md
             /tmp/release-inputs/release-declaration.json
             /tmp/release-inputs/compatibility.yaml
+            ${{ steps.test.outputs.report }}
 
       - name: Summarise the candidate
         env:
