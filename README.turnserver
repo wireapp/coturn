@@ -541,6 +541,7 @@ Options with values:
 --CA-file		CA file in OpenSSL format.
 			Forces TURN server to verify the client SSL certificates.
 			By default, no CA is set and no client certificate check is performed.
+			Federation also uses this file when federation-CA-file is not set.
 
 --ec-curve-name		Curve name for EC ciphers, if supported by OpenSSL
 			library (TLS and DTLS). The default value is prime256v1,
