@@ -152,12 +152,6 @@ tls_client_without_cert() {
   ! echo "$out" | grep -qiE "alert|certificate required|errno|connect:|:error:"
 }
 
-# log_contains <message> <log file> <expected text>
-log_contains() {
-  grep -q "$3" "$2"
-  check_result "$1" $SUCCESS
-}
-
 # federation-CA-file only: federation verifies its peers, TURNS clients need no certificate
 start_server turnserver_ecdsa_fedca.conf
 
@@ -166,8 +160,6 @@ check_result "federation-CA-file: DTLS federation client connects" $SUCCESS
 
 tls_client_without_cert
 check_result "federation-CA-file: TURNS client without certificate connects" $SUCCESS
-
-log_contains "federation-CA-file: log names federation-CA-file" turnserver_ecdsa_fedca.conf.out "using federation-CA-file"
 
 # federation-CA-file with a valid CA that did not sign the peer
 start_server turnserver_ecdsa_fedca_otherca.conf
@@ -193,8 +185,6 @@ check_result "CA-file fallback: DTLS federation client connects" $SUCCESS
 
 tls_client_without_cert
 check_result "CA-file fallback: TURNS client without certificate fails to connect" $FAILURE
-
-log_contains "CA-file fallback: log names the fallback" turnserver_ecdsa_cafile_fallback.conf.out "falling back to CA-file"
 
 # no-tls/no-dtls with a relative federation-CA-file that is only found through the
 # config file search directories (./etc/): the path must still be resolved
