@@ -3504,8 +3504,6 @@ keyerr : {
 static void adjust_key_file_names(void) {
   if (turn_params.ca_cert_file[0])
     adjust_key_file_name(turn_params.ca_cert_file, "CA", 1);
-  if (turn_params.federation_ca_cert_file[0])
-    adjust_key_file_name(turn_params.federation_ca_cert_file, "federation CA", 1);
   adjust_key_file_name(turn_params.cert_file, "certificate", 1);
   adjust_key_file_name(turn_params.pkey_file, "private key", 1);
   if (turn_params.dh_file[0])
@@ -3919,6 +3917,17 @@ static void openssl_setup(void) {
 
   if (!(turn_params.no_tls && turn_params.no_dtls)) {
     adjust_key_file_names();
+  }
+
+  /* Federation DTLS runs even when the client TLS/DTLS listeners are off, so resolve its CA file here.
+     Not critical: a missing federation CA must not disable the client listeners. On failure the path is
+     left as configured and federation_setup_dtls_ctx() reports that it cannot load the CA. */
+  if (turn_params.federation_listening_ip && turn_params.federation_listening_port &&
+      !turn_params.federation_no_dtls) {
+    if (turn_params.federation_ca_cert_file[0])
+      adjust_key_file_name(turn_params.federation_ca_cert_file, "federation CA", 0);
+    else if (turn_params.ca_cert_file[0] && turn_params.no_tls && turn_params.no_dtls)
+      adjust_key_file_name(turn_params.ca_cert_file, "CA", 0); /* not yet resolved by adjust_key_file_names() */
   }
 
   openssl_load_certificates();

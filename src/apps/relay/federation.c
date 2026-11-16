@@ -374,14 +374,15 @@ static SSL_CTX* federation_setup_dtls_ctx(int isClient) {
   SSL_CTX_set_cipher_list(ssl_ctx, cipherlist);
   
   if(federation_ca_file()[0]) {
-    // Note:  this call is overriding what was set in set_ctx (mainrelay.c)
+    // Note:  set_ctx_ex (mainrelay.c) already loaded the federation CA and set
+    //        SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE.
+    //        Here we only replace the chain verification with federation_cert_verify.
     // Note2: Instead of providing a callback to SSL_CTX_set_verify, we instead call SSL_CTX_set_cert_verify_callback.
     //        Why you ask?  Well..  If the peer provided multiple certs then the callback set via 
     //        SSL_CTX_set_verify would get called once for each certificate in the chain.  When we do it this way
     //        our callback is only called once.  We want to validate the domain/commonname/subject_alt_name and the issuer
     //        and we only want to do this against the top level certificate, so this setup works out much better, 
     //        otherwise we don't know which callback (when there are multiple) to run the domain/issuer checks in.
-    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE, NULL);
     SSL_CTX_set_cert_verify_callback(ssl_ctx, federation_cert_verify, NULL);
   }
 
@@ -472,10 +473,15 @@ void federation_load_certificates(void) {
     SSL_CTX* old_client_ctx = turn_params.federation_dtls_client_ctx;
     SSL_CTX* old_server_ctx = turn_params.federation_dtls_server_ctx;
 
-    if(federation_ca_file()[0]) {
-      print_abs_file_name("", "Federation CA", federation_ca_file());
+    if(turn_params.federation_ca_cert_file[0]) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Federation CA: using federation-CA-file\n");
+      print_abs_file_name("", "Federation CA", turn_params.federation_ca_cert_file);
+    } else if(turn_params.ca_cert_file[0]) {
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "Federation CA: federation-CA-file is not set, falling back to CA-file\n");
+      print_abs_file_name("", "Federation CA", turn_params.ca_cert_file);
     } else {
-      TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "No CA cert file, certificate validation is disabled.\n");
+      TURN_LOG_FUNC(TURN_LOG_LEVEL_WARNING, "No federation-CA-file or CA-file, federation certificate validation "
+                                            "and federation-remote-whitelist checks are disabled.\n");
     }
     print_abs_file_name("", "Federation Certificate", turn_params.federation_cert_file);
     print_abs_file_name("", "Federation Private key", turn_params.federation_pkey_file);
