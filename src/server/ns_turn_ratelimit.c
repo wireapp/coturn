@@ -171,6 +171,9 @@ int ratelimit_is_address_limited(ioa_addr *address, int max_requests, int window
   addr_set_port(address_new, 0);
   int retval = 0;
 
+  /* ur_addr_map_get is not thread safe, and the pruning above frees entries: hold the
+     global lock from the lookup until the entry is no longer used */
+  TURN_MUTEX_LOCK(&rate_limit_main_mutex);
   if (ur_addr_map_get(rate_limit_map, address_new, &ratelimit_ptr)) {
     ratelimit_entry *rateLimitEntry = (ratelimit_entry *)(void *)(ur_map_value_type)ratelimit_ptr;
     TURN_MUTEX_LOCK(&(rateLimitEntry->mutex));
@@ -208,12 +211,12 @@ int ratelimit_is_address_limited(ioa_addr *address, int max_requests, int window
 
     end_ratelimit_entry:
       TURN_MUTEX_UNLOCK(&(rateLimitEntry->mutex));
+      TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
       free(address_new);
       return retval;
     }
   } else {
     // New entry, allow response
-    TURN_MUTEX_LOCK(&rate_limit_main_mutex);
     ratelimit_add_node(address_new);
     free(address_new);
     TURN_MUTEX_UNLOCK(&rate_limit_main_mutex);
