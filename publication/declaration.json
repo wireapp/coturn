@@ -2,7 +2,7 @@
   "schemaVersion": "wire.component-release/v1alpha2",
   "component": "coturn",
   "version": "5.6.0",
-  "summary": "coturn moves to the Wire release standard. Versions are SemVer from now on, starting at 5.6.0, and the image and the Helm chart share that version. The server is unchanged: it is the one of 4.6.2-federation-wireapp.59, upstream coturn 4.6.2 with the Wire patches.",
+  "summary": "coturn moves to the Wire release standard. Versions are SemVer from now on, starting at 5.6.0, and the image and the Helm chart share that version. The server is the one of 4.6.2-federation-wireapp.59, upstream coturn 4.6.2 with the Wire patches, with one fix: the federation CA bundle no longer makes the TURN server ask its clients for a certificate.",
   "upgrade_from": ">=4.6.2-federation-wireapp.55",
   "changes": [
     {
@@ -22,8 +22,28 @@
       "description": "The image moves from Debian bullseye, out of support, to Debian bookworm, and coturn now links against OpenSSL 3 instead of OpenSSL 1.1. The server code and the chart defaults are unchanged.",
       "breaking": false,
       "links": []
+    },
+    {
+      "kind": "fixed",
+      "description": "The chart set CA-file on every deployment, which makes coturn require a client certificate on its TLS and DTLS listeners, so TURNS was unusable for Wire clients. The federation now verifies its peers with its own option, federation-CA-file (falling back to CA-file when unset), the chart renders the ca.* values into it only when DTLS federation is enabled, and CA-file is no longer set.",
+      "breaking": false,
+      "links": []
+    },
+    {
+      "kind": "deprecated",
+      "description": "Chart value ca.enabled: a custom CA bundle will later apply whenever ca.secretRef or ca.cert is set, and disabling the federation peer validation will no longer be possible.",
+      "breaking": false,
+      "links": []
     }
   ],
   "migrations": [],
-  "configuration": []
+  "configuration": [
+    {
+      "key": "ca.enabled",
+      "change": "changed",
+      "required": false,
+      "default": "false",
+      "description": "Only read when federate.enabled and federate.dtls.enabled are both true; the ca.* bundle is rendered as federation-CA-file and CA-file is no longer set. Deprecated: a custom bundle will later apply whenever ca.secretRef or ca.cert is set. Nothing to do unless you relied on CA-file to demand client certificates on the TURN listeners."
+    }
+  ]
 }
