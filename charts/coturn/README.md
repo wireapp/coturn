@@ -20,3 +20,7 @@ Wire's documentation for Restund, another TURN implementation, on
 coturn can optionally be configured to expose a TLS control port. The TLS
 private key and certificates should be provided in a `Secret` whose name is
 given in `tls.secretRef`.
+
+When DTLS federation is enabled (`federate.enabled` and `federate.dtls.enabled`), coturn verifies federation peers against the CA bundle rendered as `federation-CA-file`. By default this is the system bundle at `/etc/ssl/certs/ca-certificates.crt`. To use a custom bundle, set `ca.enabled: true` and either `ca.secretRef` (an existing `Secret`, key `ca.secretKey`) or `ca.cert` (inline PEM). The chart does not set `CA-file`, so TURN clients are never asked for a client certificate. This requires a coturn image that supports `federation-CA-file`; older images ignore the option with a warning and accept federation peers without certificate validation.
+
+Deprecation: `ca.enabled` will be removed in a future release. A custom bundle will then be used whenever `ca.secretRef` or `ca.cert` is set, and `ca.enabled: true` without a bundle, which disables federation peer validation including the `federate.dtls` remote whitelist checks, will no longer be supported.

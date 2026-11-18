@@ -157,12 +157,16 @@ tls:
     pullPolicy: IfNotPresent
     tag: 72c3c8434660bd157d42012b0bcd67f338fc5c7a
 
-# CA certificate bundle configuration
-# Controls certificate authority validation for coturn
+# CA certificate bundle used to verify federation peers (federate.dtls), rendered as
+# federation-CA-file. It does not make coturn ask TURN clients for certificates.
+# Only used when federate.enabled and federate.dtls.enabled are both true.
 ca:
+  # DEPRECATED: will be removed in a future release. A custom bundle will then be used whenever
+  # secretRef or cert is set, and disabling validation will no longer be possible.
   # When disabled: Uses system CA bundle at /etc/ssl/certs/ca-certificates.crt (default behavior)
   # When enabled with secretRef OR cert: Uses custom CA bundle
-  # When enabled without secretRef or cert: Disables CA validation entirely (not recommended for production)
+  # When enabled without secretRef or cert: Disables CA validation entirely, including the
+  # federate.dtls remote whitelist checks (not recommended for production)
   enabled: false
 
   # Option 1: Reference to an existing Kubernetes Secret containing the CA bundle

@@ -33,6 +33,14 @@ fail_on_error "generating private key (ca_ecdsa_pkey.pem) and certificate reques
 openssl x509 -req -in ca_ecdsa.csr -signkey ca_ecdsa_pkey.pem -out ca_ecdsa_cert.pem -days 3650
 fail_on_error "generating public cert (ca_ecdsa_cert.pem) from certificate request (ca_ecdsa.csr)"
 
+# Generate a second, unrelated ECDSA CA. It is valid but did not sign any federation certificate,
+# so a server that trusts only this CA must reject the federation peers.
+openssl req -new -nodes -newkey ec:<(openssl ecparam -name prime256v1) -keyout ca_other_ecdsa_pkey.pem -out ca_other_ecdsa.csr -subj "/C=CA/O=Wire/CN=OtherCA"
+fail_on_error "generating private key (ca_other_ecdsa_pkey.pem) and certificate request (ca_other_ecdsa.csr)"
+
+openssl x509 -req -in ca_other_ecdsa.csr -signkey ca_other_ecdsa_pkey.pem -out ca_other_ecdsa_cert.pem -days 3650
+fail_on_error "generating public cert (ca_other_ecdsa_cert.pem) from certificate request (ca_other_ecdsa.csr)"
+
 
 ####################################################
 # Generate the private keys and certificate requests
