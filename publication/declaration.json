@@ -2,7 +2,7 @@
   "schemaVersion": "wire.component-release/v1alpha2",
   "component": "coturn",
   "version": "5.6.0",
-  "summary": "coturn moves to the Wire release standard. Versions are SemVer from now on, starting at 5.6.0, and the image and the Helm chart share that version. The server is unchanged: it is the one of 4.6.2-federation-wireapp.59, upstream coturn 4.6.2 with the Wire patches.",
+  "summary": "coturn moves to the Wire release standard: versions are SemVer from now on, starting at 5.6.0, and the image and the Helm chart share that version. The server is the one of 4.6.2-federation-wireapp.59 with two fixes, TURNS clients are no longer asked for a client certificate and the rate limiter no longer races with its pruning. Deploy the image and the chart of the same release.",
   "upgrade_from": ">=4.6.2-federation-wireapp.55",
   "changes": [
     {
@@ -19,11 +19,63 @@
     },
     {
       "kind": "changed",
-      "description": "The image moves from Debian bullseye, out of support, to Debian bookworm, and coturn now links against OpenSSL 3 instead of OpenSSL 1.1. The server code and the chart defaults are unchanged.",
+      "description": "The image moves from Debian bullseye, out of support, to Debian bookworm, and coturn now links against OpenSSL 3 instead of OpenSSL 1.1.",
       "breaking": false,
       "links": []
+    },
+    {
+      "kind": "fixed",
+      "description": "TURNS clients without a client certificate are accepted again: the chart no longer sets CA-file and gives federation its own CA bundle, federation-CA-file. Federation peers are still verified. Deploy the image of the same release: an older image ignores federation-CA-file and accepts federation peers without checking their certificate.",
+      "breaking": false,
+      "links": [
+        "https://github.com/wireapp/coturn/pull/70",
+        "https://github.com/wireapp/coturn/commit/633790f5",
+        "https://github.com/wireapp/coturn/commit/0215bdb5"
+      ]
+    },
+    {
+      "kind": "fixed",
+      "description": "A federation CA bundle that cannot be found no longer switches off the TLS and DTLS client listeners; only federation peers are rejected.",
+      "breaking": false,
+      "links": [
+        "https://github.com/wireapp/coturn/pull/70",
+        "https://github.com/wireapp/coturn/commit/100c81b7"
+      ]
+    },
+    {
+      "kind": "fixed",
+      "description": "The rate limiter no longer reads its address table while another thread inserts or prunes entries.",
+      "breaking": false,
+      "links": [
+        "https://github.com/wireapp/coturn/pull/77",
+        "https://github.com/wireapp/coturn/commit/179a8e3f"
+      ]
+    },
+    {
+      "kind": "deprecated",
+      "description": "ca.enabled will be removed in a future release. A custom bundle will then be used whenever ca.secretRef or ca.cert is set, and turning off federation peer validation will no longer be possible.",
+      "breaking": false,
+      "links": [
+        "https://github.com/wireapp/coturn/pull/70",
+        "https://github.com/wireapp/coturn/commit/dd0672d9"
+      ]
     }
   ],
   "migrations": [],
-  "configuration": []
+  "configuration": [
+    {
+      "key": "ca",
+      "change": "changed",
+      "required": false,
+      "default": null,
+      "description": "The CA bundle is rendered as federation-CA-file inside the federate.dtls block instead of CA-file, and only when federate.enabled and federate.dtls.enabled are both true; the CA secret and its mount are not created otherwise. Existing values render the same CA choice: nothing to change."
+    },
+    {
+      "key": "ca.enabled",
+      "change": "changed",
+      "required": false,
+      "default": "false",
+      "description": "Deprecated, to be removed in a future release. Set ca.secretRef or ca.cert for a custom bundle and stop relying on ca.enabled: true without a bundle, which turns off federation peer validation."
+    }
+  ]
 }
