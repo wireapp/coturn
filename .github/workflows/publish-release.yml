@@ -20,9 +20,6 @@ on:
       AWS_SECRET_ACCESS_KEY:
         description: 'Publishes the exact Helm package to the S3 chart repository (charts-develop or charts)'
         required: true
-      AWS_REGION:
-        description: 'Region of the S3 chart repositories'
-        required: false
       WIRE_BUILDS_WRITE_ACCESS_GH_TOKEN:
         description: 'Commits the published chart to wireapp/wire-builds build.json (dev-sourced releases only)'
         required: false
@@ -254,7 +251,6 @@ jobs:
           s3-repository: ${{ steps.verify.outputs.type == 'ga' && 'charts' || 'charts-develop' }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Bump coturn in wire-builds
         id: wire_builds
